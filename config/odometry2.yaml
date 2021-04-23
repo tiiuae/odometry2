@@ -1,0 +1,4 @@
+param_namespace:
+  target_ip_addr: "127.0.0.1"
+  target_udp_port: 14550
+  odometry_source: "GPS"
