@@ -96,10 +96,10 @@ private:
   std::mutex mutex_local_;
 
   // Odometry switch
-  std::string              odom_source_;
-  std::mutex               mutex_odom_source_;
-  std::vector<std::string> _state_estimators_names_ = {"GPS", "HECTOR"};
-  std::vector<std::string> _estimator_type_names_;
+  mrs_msgs::msg::EstimatorType estimator_source_;
+  std::string                  _estimator_source_param_;
+  std::mutex                   mutex_estimator_source_;
+  std::vector<std::string>     estimator_type_names_;
 
   // use takeoff lat and long to initialize local frame
   std::shared_ptr<mavsdk::geometry::CoordinateTransformation> coord_transform_;
@@ -134,11 +134,15 @@ private:
 
   // service callbacks
   /* bool takeoffCallback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response); */
-  bool callbackChangeEstimator(const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Request> req, std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Response> res);
+  bool callbackChangeEstimator(const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Request> req,
+                               std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Response>      res);
 
   // internal functions
-  bool isValidType(const mrs_msgs::msg::EstimatorType &type);
-  bool changeCurrentEstimator(const mrs_msgs::msg::EstimatorType &desired_estimator);
+  bool        isValidType(const mrs_msgs::msg::EstimatorType &type);
+  bool        changeCurrentEstimator(const mrs_msgs::msg::EstimatorType &desired_estimator);
+  void        setupEstimator(const std::string &type);
+  std::string printOdometryDiag();
+  std::string toUppercase(const std::string &type);
 
   void publishTF();
   void publishStaticTF();
@@ -169,11 +173,13 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   bool callbacks_enabled_ = false;
   parse_param("target_ip_addr", target_ip_addr_);
   parse_param("target_udp_port", target_udp_port_);
-  parse_param("odometry_source", odom_source_);
+  parse_param("odometry_source", _estimator_source_param_);
   //}
-  //
-  _estimator_type_names_.push_back(NAME_OF(mrs_msgs::msg::EstimatorType::HECTOR));
-  _estimator_type_names_.push_back(NAME_OF(mrs_msgs::msg::EstimatorType::GPS));
+
+  estimator_type_names_.push_back(NAME_OF(mrs_msgs::msg::EstimatorType::HECTOR));
+  estimator_type_names_.push_back(NAME_OF(mrs_msgs::msg::EstimatorType::GPS));
+
+  setupEstimator(_estimator_source_param_);
 
   /* estabilish connection with PX4 //{ */
   mavsdk::ConnectionResult connection_result = mavsdk_.add_udp_connection(target_ip_addr_, target_udp_port_);
@@ -312,8 +318,8 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 //}
 
 /* callbackChangeEstimator //{ */
-bool Odometry2::callbackChangeEstimator(
-    const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Request> req, const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Response> res) {
+bool Odometry2::callbackChangeEstimator(const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Request>  req,
+                                        const std::shared_ptr<mrs_msgs::srv::ChangeEstimator::Response> res) {
 
   if (!is_initialized_) {
     return false;
@@ -332,32 +338,28 @@ bool Odometry2::callbackChangeEstimator(
     res->success = false;
     res->message = ("Not a valid odometry type");
     {
-      std::scoped_lock lock(mutex_odom_source_);
-
-      /* /1* res->estimator_type.type = odom_source_; *1/ TODO:: wrong cast type, solve it */
+      std::scoped_lock lock(mutex_estimator_source_);
+      res->estimator_type.type = estimator_source_.type;
     }
     return true;
   }
 
-  /* bool success = false; */
-  /* { */
-  /*   std::scoped_lock lock(mutex_odom_source_); */
+  // Change the estimator
+  bool                         success = false;
+  mrs_msgs::msg::EstimatorType desired_estimator;
+  desired_estimator.type = req->estimator_type.type;
+  desired_estimator.name = estimator_type_names_[desired_estimator.type];
+  success                = changeCurrentEstimator(desired_estimator);
 
-  /*   mrs_msgs::msg::EstimatorType desired_estimator; */
-  /*   desired_estimator.type = req->estimator_type.type; */
-  /*   desired_estimator.name = _state_estimators_names_[desired_estimator->type]; */
-  /*   success                = changeCurrentEstimator(desired_estimator); */
-  /* } */
+  RCLCPP_INFO(this->get_logger(), "[Odometry2]: %s", printOdometryDiag().c_str());
 
-  /* /1* RCLCPP_INFO(this->get_logger(),"[Odometry2]: %s", printOdometryDiag().c_str()); *1/ */
+  res->success = success;
+  res->message = (printOdometryDiag().c_str());
+  {
+    std::scoped_lock lock(mutex_estimator_source_);
 
-  /* res->success = success; */
-  /* res->message = (printOdometryDiag().c_str()); */
-  /* { */
-  /*   std::scoped_lock lock(mutex_estimator_type_); */
-
-  /*   res->estimator_type.type = estimator_type_.type; */
-  /* } */
+    res->estimator_type.type = estimator_source_.type;
+  }
 
   return true;
 }
@@ -466,8 +468,8 @@ void Odometry2::publishTF() {
   tf2::Quaternion                      q;
 
   {
-    std::scoped_lock lock(mutex_odom_source_);
-    if (odom_source_ == "GPS") {
+    std::scoped_lock lock(mutex_estimator_source_);
+    if (estimator_source_.type == mrs_msgs::msg::EstimatorType::GPS) {
       std::scoped_lock lock(mutex_gps_);
 
       tf1.header.stamp            = this->get_clock()->now();
@@ -494,7 +496,7 @@ void Odometry2::publishTF() {
       tf1.transform.rotation.z    = q.getZ();
       tf_broadcaster_->sendTransform(tf1);
 
-    } else if (odom_source_ == "HECTOR") {
+    } else if (estimator_source_.type == mrs_msgs::msg::EstimatorType::HECTOR) {
       std::scoped_lock lock(mutex_hector_);
 
       geometry_msgs::msg::TransformStamped tf1;
@@ -522,7 +524,7 @@ void Odometry2::publishTF() {
       tf1.transform.rotation.z    = q.getZ();
       tf_broadcaster_->sendTransform(tf1);
     } else {
-      RCLCPP_ERROR(this->get_logger(), " '%s' is not a valid source of odometry", odom_source_.c_str());
+      RCLCPP_ERROR(this->get_logger(), " '%s' is not a valid source of odometry", estimator_source_.name.c_str());
       return;
     }
   }
@@ -593,11 +595,104 @@ bool Odometry2::isValidType(const mrs_msgs::msg::EstimatorType &type) {
 bool Odometry2::changeCurrentEstimator(const mrs_msgs::msg::EstimatorType &desired_estimator) {
 
   mrs_msgs::msg::EstimatorType target_estimator = desired_estimator;
-  target_estimator.name                    = _estimator_type_names_[target_estimator.type];
+  target_estimator.name                         = estimator_type_names_[target_estimator.type];
 
-  return false;
+  // Return if already active
+  {
+    std::scoped_lock lock(mutex_estimator_source_);
+    if (toUppercase(estimator_source_.name) == toUppercase(target_estimator.name)) {
+      RCLCPP_INFO(this->get_logger(), "[Odometry2] Desired estimator '%s' already active. Not switching.", target_estimator.name.c_str());
+      return true;
+    }
+  }
+  // Check odometry source availability
+  if (target_estimator.type == mrs_msgs::msg::EstimatorType::GPS) {
+
+    if (!getting_gps_) {
+      RCLCPP_ERROR(this->get_logger(), "[Odometry2] Cannot transition to GPS type. GPS source is not active.");
+      return false;
+    }
+  } else if (target_estimator.type == mrs_msgs::msg::EstimatorType::HECTOR) {
+
+    if (!getting_hector_) {
+      RCLCPP_ERROR(this->get_logger(), "[Odometry2] Cannot transition to HECTOR type. HECTOR source is not active.");
+      return false;
+    }
+  } else {
+    RCLCPP_ERROR(this->get_logger(), "[Odometry2] Rejected transition to invalid types %s", target_estimator.name.c_str());
+    return false;
+  }
+
+  {
+    std::scoped_lock lock(mutex_estimator_source_);
+    estimator_source_      = target_estimator;
+    estimator_source_.name = _estimator_source_param_[estimator_source_.type];
+    RCLCPP_WARN(this->get_logger(), "[Odometry2]: Transition to %s state estimator successful", estimator_source_.name.c_str());
+  }
+  return true;
 }
 
+
+//}
+
+/* //{ setupEstimator() */
+void Odometry2::setupEstimator(const std::string &type) {
+
+  std::scoped_lock lock(mutex_estimator_source_);
+  if (type == "GPS") {
+    RCLCPP_INFO(this->get_logger(), "Settting up odometry source '%s'", type);
+    estimator_source_.type = mrs_msgs::msg::EstimatorType::GPS;
+    estimator_source_.name = estimator_type_names_[estimator_source_.type];
+
+  } else if (type == "HECTOR") {
+    RCLCPP_INFO(this->get_logger(), "Settting up odometry source '%s'", type);
+    estimator_source_.type = mrs_msgs::msg::EstimatorType::HECTOR;
+    estimator_source_.name = estimator_type_names_[estimator_source_.type];
+
+  } else {
+    RCLCPP_ERROR(this->get_logger(), "Could not find a odometry source: '%s'", type);
+  }
+  return;
+}
+
+//}
+
+/* //{ printOdometryDiag() */
+std::string Odometry2::printOdometryDiag() {
+
+  std::string s_diag;
+
+  mrs_msgs::msg::EstimatorType type;
+
+  {
+    std::scoped_lock lock(mutex_estimator_source_);
+
+    type.type = estimator_source_.type;
+  }
+
+  s_diag += "Current estimator type: ";
+  s_diag += std::to_string(type.type);
+
+  if (type.type == mrs_msgs::msg::EstimatorType::GPS) {
+    s_diag += "GPS";
+  } else if (type.type == mrs_msgs::msg::EstimatorType::HECTOR) {
+    s_diag += "HECTOR";
+  } else {
+    s_diag += "UNKNOWN";
+  }
+
+  return s_diag;
+}
+
+//}
+
+/* toUppercase //{ */
+
+std::string Odometry2::toUppercase(const std::string &str_in) {
+  std::string str_out = str_in;
+  std::transform(str_out.begin(), str_out.end(), str_out.begin(), ::toupper);
+  return str_out;
+}
 
 //}
 
