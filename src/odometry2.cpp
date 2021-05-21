@@ -17,9 +17,6 @@
 #include <fog_msgs/srv/change_estimator.hpp>
 #include <fog_msgs/msg/estimator_type.hpp>
 
-#include <mavsdk/mavsdk.h>
-#include <mavsdk/plugins/action/action.h>
-#include <mavsdk/plugins/mission/mission.h>
 #include <mavsdk/geometry.h>
 
 #include <eigen3/Eigen/Core>
@@ -59,26 +56,23 @@ private:
   bool getting_gps_          = false;
   bool getting_hector_       = false;
   /* bool getting_garmin_       = false; */
-
   bool callbacks_enabled_ = false;
 
-  unsigned int                     px4_system_id_;
-  unsigned int                     px4_component_id_ = 1;
-  std::string                      target_ip_addr_;
-  unsigned int                     target_udp_port_;
-  mavsdk::Mavsdk                   mavsdk_;
-  std::shared_ptr<mavsdk::System>  system_;
-  std::shared_ptr<mavsdk::Action>  action_;
-  std::shared_ptr<mavsdk::Mission> mission_;
-  mavsdk::Mission::MissionPlan     mission_plan_;
+  std::string uav_name_         = "";
+  std::string world_frame_      = "";
+  std::string ned_origin_frame_ = "";
+  std::string ned_fcu_frame_    = "";
+  std::string fcu_frame_        = "";
+
+  unsigned int px4_system_id_;
+  unsigned int px4_component_id_ = 1;
+  std::string  target_ip_addr_;
+  unsigned int target_udp_port_;
 
   std::shared_ptr<tf2_ros::Buffer>                     tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener>          tf_listener_;
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
-
-  // vehicle global position
-  float latitude_, longitude_, altitude_;
 
   // GPS
   float      pos_gps_[3];
@@ -100,9 +94,6 @@ private:
   std::string                  _estimator_source_param_;
   std::mutex                   mutex_estimator_source_;
   std::vector<std::string>     estimator_type_names_;
-
-  // use takeoff lat and long to initialize local frame
-  std::shared_ptr<mavsdk::geometry::CoordinateTransformation> coord_transform_;
 
   rclcpp::Time last_expected_, last_real_, next_expected_;
   rclcpp::Rate odometry_loop_rate_ = rclcpp::Rate(100);
@@ -129,11 +120,12 @@ private:
   /* void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg); */
 
   // services provided
-  /* rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr land_service_; */
   rclcpp::Service<fog_msgs::srv::ChangeEstimator>::SharedPtr change_odometry_source_;
 
+  // services client
+  rclcpp::Client<fog_msgs::srv::SetOrigin>::SharedPtri set_origin_client;
+
   // service callbacks
-  /* bool takeoffCallback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response); */
   bool callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Request> req,
                                std::shared_ptr<fog_msgs::srv::ChangeEstimator::Response>      res);
 
@@ -168,6 +160,15 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   RCLCPP_INFO(this->get_logger(), "Initializing...");
 
+  //Getting
+  try {
+    uav_name_ = std::string(std::getenv("DRONE_DEVICE_ID"));
+  }
+  catch (...) {
+    RCLCPP_WARN(this->get_logger(), "[%s]: Environment variable DRONE_DEVICE_ID was not defined!", this->get_name());
+  }
+  RCLCPP_INFO(this->get_logger(), "[%s]: UAV name is: '%s'", this->get_name(), uav_name_.c_str());
+
   /* parse params from config file //{ */
 
   bool callbacks_enabled_ = false;
@@ -197,6 +198,10 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // service handlers
   change_odometry_source_ =
       this->create_service<fog_msgs::srv::ChangeEstimator>("~/change_odometry_source", std::bind(&Odometry2::callbackChangeEstimator, this, _1, _2));
+
+  // service clients
+  rclcpp::Client<fog_msgs::srv::SetOrigin>::SharedPtri set_origin_client = this->create_client<fox_msgs::srv::SetOrigin>("set_origin");
+  ;
 
   odometry_thread_ = std::thread(&Odometry2::odometryRoutine, this);
   odometry_thread_.detach();
@@ -234,16 +239,28 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::UniquePt
   }
   /* Initialize the global frame position */
   if (!getting_gps_) {
-    mavsdk::geometry::CoordinateTransformation::GlobalCoordinate ref;
-    ref.latitude_deg  = msg->lat;
-    ref.longitude_deg = msg->lon;
-    coord_transform_  = std::make_shared<mavsdk::geometry::CoordinateTransformation>(mavsdk::geometry::CoordinateTransformation(ref));
+    auto request       = std::make_shared<fox_msgs::srv::SetOrigin::Request>();
+    request->latitude  = msg->lat;
+    request->longitude = msg->lon;
+
+    while (!set_origin_client->wait_for_service(1s)) {
+      if (!rclcpp::ok()) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "[Odometry2]: Interrupted while waiting for the service. Exiting.");
+        return 0;
+      }
+      RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[Odometry2]: SetOrigin service not available, waiting again...");
+    }
+
+    auto result = set_origin_client->async_send_request(request);
+
+    // Wait for the result.
+    if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+      RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[Odometry2]: SetOrigin successful!");
+    } else {
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "[Odometry2]: Failed to call service SetOrigin");
+    }
   }
-  /* TODO:: The lat long alt is never used. Keep it just for clarity */
-  this->latitude_  = msg->lat;
-  this->longitude_ = msg->lon;
-  this->altitude_  = msg->alt;
-  getting_gps_     = true;
+  getting_gps_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "Getting gps!");
 }
 //}
