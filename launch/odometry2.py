@@ -14,10 +14,9 @@ def generate_launch_description():
     
     ld.add_action(launch.actions.DeclareLaunchArgument("use_sim_time", default_value="false"))
 
-    UAV_TYPE=os.getenv('UAV_TYPE')
-    UAV_NAME=os.getenv('UAV_NAME')
+    DRONE_DEVICE_ID=os.getenv('DRONE_DEVICE_ID')
 
-    namespace=UAV_NAME
+    namespace=DRONE_DEVICE_ID
     ld.add_action(ComposableNodeContainer(
         namespace='',
         name=namespace+'_odometry2',
@@ -31,25 +30,16 @@ def generate_launch_description():
                 name='odometry2',
                 parameters=[
                     pkg_share_path + '/config/odometry2.yaml',
-                    {"uav_type": UAV_TYPE},
                     {"use_sim_time": launch.substitutions.LaunchConfiguration("use_sim_time")},
                 ],
                 remappings=[
-                    ("~/vehicle_command_out", "/VehicleCommand_PubSubTopic"),
                     ("~/local_odom_out", "~/local_odom"),
-                    ("~/debug_markers_out", "~/debug/markers"),
 
-                    ("~/timesync_in", "/Timesync_PubSubTopic"),
-                    ("~/gps_in", "/VehicleGlobalPosition_PubSubTopic"),
-                    ("~/pixhawk_odom_in", "/VehicleOdometry_PubSubTopic"),
-                    ("~/waypoints_in", "/waypoints"),
+                    ("~/timesync_in", "/" + DRONE_DEVICE_ID + "/Timesync_PubSubTopic"),
+                    ("~/gps_in", "/" + DRONE_DEVICE_ID + "/VehicleGlobalPosition_PubSubTopic"),
+                    ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
 
-                    ("~/offboard_control_mode_out", "/OffboardControlMode_PubSubTopic"),
-                    ("~/position_setpoint_triplet_out", "/PositionSetpointTriplet_PubSubTopic"),
-                    ("~/takeoff_in", "/takeoff"),
-                    ("~/land_in", "/land"),
-                    ("~/land_home_in", "/land_home"),
-                    ("~/local_setpoint_in", "/local_setpoint"),
+                    ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
                 ],
             ),
         ],
