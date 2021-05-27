@@ -7,6 +7,7 @@
 
 #include <std_srvs/srv/set_bool.hpp>
 #include <fog_msgs/srv/get_origin.hpp>
+#include <fog_msgs/srv/get_bool.hpp>
 #include <fog_msgs/srv/vec4.hpp>
 #include <fog_msgs/srv/change_estimator.hpp>
 #include <fog_msgs/msg/estimator_type.hpp>
@@ -51,13 +52,14 @@ public:
   Odometry2(rclcpp::NodeOptions options);
 
 private:
-  bool is_initialized_       = false;
-  bool getting_pixhawk_odom_ = false;
-  bool getting_gps_          = false;
-  bool getting_hector_       = false;
+  bool is_initialized_ = false;
   /* bool getting_garmin_       = false; */
   bool callbacks_enabled_ = false;
-  bool send_odom_ready_   = false;
+
+  std::atomic_bool getting_pixhawk_odom_ = false;
+  std::atomic_bool getting_hector_       = false;
+  std::atomic_bool odom_ready_           = false;
+  std::atomic_bool getting_gps_          = false;
 
   std::string uav_name_            = "";
   std::string world_frame_         = "";
@@ -66,6 +68,9 @@ private:
   std::string fcu_frame_           = "";
   std::string hector_origin_frame_ = "";
   std::string hector_frame_        = "";
+
+  // use takeoff lat and long to initialize local frame
+  mavsdk::geometry::CoordinateTransformation::GlobalCoordinate ref;
 
   unsigned int px4_system_id_;
   unsigned int px4_component_id_ = 1;
@@ -78,19 +83,19 @@ private:
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 
   // GPS
-  float      pos_gps_[3];
-  float      ori_gps_[4];
-  std::mutex mutex_gps_;
+  std::atomic<float> pos_gps_[3];
+  std::atomic<float> ori_gps_[4];
+  /* std::mutex mutex_gps_; */
 
   // Hector
-  float      pos_hector_[3];
-  float      ori_hector_[4];
-  std::mutex mutex_hector_;
+  std::atomic<float> pos_hector_[3];
+  std::atomic<float> ori_hector_[4];
+  /* std::mutex mutex_hector_; */
 
   // Vehicle local position
-  float      pos_local_[3];
-  float      ori_local_[4];
-  std::mutex mutex_local_;
+  std::atomic<float> pos_local_[3];
+  std::atomic<float> ori_local_[4];
+  /* std::mutex mutex_local_; */
 
   // Odometry switch
   fog_msgs::msg::EstimatorType estimator_source_;
@@ -124,14 +129,14 @@ private:
 
   // services provided
   rclcpp::Service<fog_msgs::srv::ChangeEstimator>::SharedPtr change_odometry_source_;
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr         getting_odom_service_;
+  rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr         getting_odom_service_;
   rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr       get_origin_service_;
 
   // service callbacks
   bool callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Request> req,
                                std::shared_ptr<fog_msgs::srv::ChangeEstimator::Response>      res);
-  bool gettingOdomCallback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response);
-  bool getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request, std::shared_ptr<fog_msgs::srv::SetOrigin::Response> response);
+  bool getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Request> request, std::shared_ptr<fog_msgs::srv::GetBool::Response> response);
+  bool getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request, std::shared_ptr<fog_msgs::srv::GetOrigin::Response> response);
 
 
   // internal functions
@@ -177,8 +182,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /* parse params from config file //{ */
 
   bool callbacks_enabled_ = false;
-  /* parse_param("target_ip_addr", target_ip_addr_); */
-  /* parse_param("target_udp_port", target_udp_port_); */
   parse_param("odometry_source", _estimator_source_param_);
 
   /* frame definition */
@@ -212,8 +215,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // service handlers
   change_odometry_source_ =
       this->create_service<fog_msgs::srv::ChangeEstimator>("~/change_odometry_source", std::bind(&Odometry2::callbackChangeEstimator, this, _1, _2));
-  getting_odom_service_ = this->create_service<std_srvs::srv::SetBool>("~/getting_odom_in", std::bind(&Odometry2::gettingOdomCallback, this, _1, _2));
-  get_origin_service_ = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin_in", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
+  getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/odom_available", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
+  get_origin_service_   = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
 
   odometry_thread_ = std::thread(&Odometry2::odometryRoutine, this);
   odometry_thread_.detach();
@@ -251,41 +254,11 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::UniquePt
   }
   /* Initialize the global frame position */
   if (!getting_gps_) {
+    ref.latitude_deg  = msg->lat;
+    ref.longitude_deg = msg->lon;
+
+    getting_gps_ = true;
     RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry2] Getting gps!");
-
-    auto request       = std::make_shared<fog_msgs::srv::GetOrigin::Request>();
-    request->latitude  = msg->lat;
-    request->longitude = msg->lon;
-
-    // We give the async_send_request() method a callback that will get executed once the response
-    // is received.
-    // This way we can return immediately from this method and allow other work to be done by the
-    // executor in `spin` while waiting for the response.
-    using ServiceResponseFuture     = rclcpp::Client<fog_msgs::srv::GetOrigin>::SharedFuture;
-    auto response_received_callback = [this](ServiceResponseFuture future) {
-      auto result = future.get();
-      RCLCPP_INFO(this->get_logger(), "Result of a callback: %s", result->message.c_str());
-      getting_gps_ = true;
-    };
-    auto future_result = get_origin_client_->async_send_request(request, response_received_callback);
-
-
-    /* while (!get_origin_client_->wait_for_service(std::chrono::seconds(1))) { */
-    /*   if (!rclcpp::ok()) { */
-    /*     RCLCPP_ERROR(this->get_logger(), "[Odometry2]: Interrupted while waiting for the service. Exiting."); */
-    /*   } */
-    /*   RCLCPP_INFO(this->get_logger(), "[Odometry2]: GetOrigin service not available, waiting again..."); */
-    /* } */
-
-    /* auto result = get_origin_client_->async_send_request(request); */
-
-    /* // Wait for the result. */
-    /* if (rclcpp::spin_until_future_complete(this->shared_from_this(), result) == rclcpp::FutureReturnCode::SUCCESS) { */
-    /*   RCLCPP_INFO(this->get_logger(), "[Odometry2]: GetOrigin successful!"); */
-    /*   getting_gps_ = true; */
-    /* } else { */
-    /*   RCLCPP_ERROR(this->get_logger(), "[Odometry2]: Failed to call service GetOrigin"); */
-    /* } */
   }
 }
 //}
@@ -297,7 +270,7 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
   }
 
   {
-    std::scoped_lock lock(mutex_gps_);
+    /* std::scoped_lock lock(mutex_gps_); */
     pos_gps_[0] = msg->x;
     pos_gps_[1] = msg->y;
     pos_gps_[2] = msg->z;
@@ -319,14 +292,14 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   }
 
   {
-    std::scoped_lock lock(mutex_hector_);
-    pos_gps_[0] = msg->pose.position.x;
-    pos_gps_[1] = msg->pose.position.y;
-    pos_gps_[2] = 0;  // TODO:: Hector does not provide z. We have to combine the information from pixhawk z fusion of garmin and barometer
-    ori_gps_[0] = msg->pose.orientation.w;
-    ori_gps_[1] = msg->pose.orientation.x;
-    ori_gps_[2] = msg->pose.orientation.y;
-    ori_gps_[3] = msg->pose.orientation.z;
+    /* std::scoped_lock lock(mutex_hector_); */
+    pos_hector_[0] = msg->pose.position.x;
+    pos_hector_[1] = msg->pose.position.y;
+    pos_hector_[2] = 0;  // TODO:: Hector does not provide z. We have to combine the information from pixhawk z fusion of garmin and barometer
+    ori_hector_[0] = msg->pose.orientation.w;
+    ori_hector_[1] = msg->pose.orientation.x;
+    ori_hector_[2] = msg->pose.orientation.y;
+    ori_hector_[3] = msg->pose.orientation.z;
   }
 
   getting_hector_ = true;
@@ -334,19 +307,18 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 }
 //}
 
-/* gettingOdomCallback //{ */
-bool Odometry2::gettingOdomCallback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                                    std::shared_ptr<std_srvs::srv::SetBool::Response>      response) {
-  if (!getting_odom_) {
-    RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting odometry!", this->get_name());
-    response->message = "Recieving odometry!";
-    response->success = true;
+/* getOdomCallback //{ */
+bool Odometry2::getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Request> request, std::shared_ptr<fog_msgs::srv::GetBool::Response> response) {
+  if (!is_initialized_) {
+    return false;
+  }
+  if (odom_ready_) {
+    response->value = true;
+    RCLCPP_INFO(this->get_logger(), "[%s]: getOdometry service responded!", this->get_name());
 
-    getting_odom_ = true;
   } else {
-    RCLCPP_WARN(this->get_logger(), "[%s]: Already getting gps! This should not be called again!", this->get_name());
-    response->message = "getting_odom_ variable already set! Cannot do again!";
-    response->success = false;
+    response->value = false;
+    RCLCPP_WARN(this->get_logger(), "[%s]: Waiting for Odometry availability!", this->get_name());
     return false;
   }
   return true;
@@ -355,34 +327,24 @@ bool Odometry2::gettingOdomCallback(const std::shared_ptr<std_srvs::srv::SetBool
 
 /* getOriginCallback //{ */
 bool Odometry2::getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request,
-                                         std::shared_ptr<fog_msgs::srv::GetOrigin::Response> response)
-{
-    if (!gps_origin_set_)
-    {
-        mavsdk::geometry::CoordinateTransformation::GlobalCoordinate ref;
-        ref.latitude_deg = request->latitude;
-        ref.longitude_deg = request->longitude;
-        coord_transform_ = std::make_shared<mavsdk::geometry::CoordinateTransformation>(
-            mavsdk::geometry::CoordinateTransformation(ref));
-
-        RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting gps origin!", this->get_name());
-        response->message = "Origin set!";
-        response->success = true;
-
-        gps_origin_set_ = true;
-    }
-    else
-    {
-        RCLCPP_WARN(
-            this->get_logger(), "[%s]: GPS origin already set! This should not be called again!", this->get_name());
-        response->message = "Origin has already been set! Cannot do again!";
-        response->success = false;
-        return false;
-    }
-    return true;
+                                  std::shared_ptr<fog_msgs::srv::GetOrigin::Response>      response) {
+  if (!is_initialized_) {
+    return false;
+  }
+  if (getting_gps_) {
+    RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin service responded!", this->get_name());
+    /* response->latitude  = ref->latitude_deg; */
+    /* response->longitude = ref->longitude_deg; */
+    response->success = true;
+    RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin service responded!", this->get_name());
+  } else {
+    RCLCPP_WARN(this->get_logger(), "[%s]: GPS origin not set yet!", this->get_name());
+    response->success = false;
+    return false;
+  }
+  return true;
 }
 //}
-
 
 /* callbackChangeEstimator //{ */
 bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Request>  req,
@@ -401,6 +363,7 @@ bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::Cha
 
   // Check whether a valid type was requested
   if (!isValidType(req->estimator_type)) {
+    RCLCPP_INFO(this->get_logger(), "test 1");
     RCLCPP_ERROR(this->get_logger(), "[Odometry2]: %d is not a valid odometry type", req->estimator_type.type);
     res->success = false;
     res->message = ("Not a valid odometry type");
@@ -411,12 +374,15 @@ bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::Cha
     return true;
   }
 
+  RCLCPP_INFO(this->get_logger(), "test 2");
   // Change the estimator
   bool                         success = false;
   fog_msgs::msg::EstimatorType desired_estimator;
+  RCLCPP_INFO(this->get_logger(), "test 3");
   desired_estimator.type = req->estimator_type.type;
   desired_estimator.name = estimator_type_names_[desired_estimator.type];
   success                = changeCurrentEstimator(desired_estimator);
+  RCLCPP_INFO(this->get_logger(), "test 4");
 
   RCLCPP_INFO(this->get_logger(), "[Odometry2]: %s", printOdometryDiag().c_str());
 
@@ -448,32 +414,8 @@ void Odometry2::odometryRoutine(void) {
 
     if (is_initialized_ && getting_pixhawk_odom_ && getting_hector_) {
       callbacks_enabled_ = true;
+      odom_ready_        = true;
       publishLocalOdom();
-
-      if (!send_odom_ready_) {
-
-        while (!getting_odom_client_->wait_for_service(std::chrono::seconds(1))) {
-          if (!rclcpp::ok()) {
-            RCLCPP_ERROR(this->get_logger(), "[Odometry2]: Interrupted while waiting for the service. Exiting.");
-          }
-          RCLCPP_INFO(this->get_logger(), "[Odometry2]: GettingOdom service not available, waiting again...");
-        }
-
-        auto request  = std::make_shared<std_srvs::srv::SetBool::Request>();
-        request->data = true;
-        auto result   = getting_odom_client_->async_send_request(request);
-
-        // Wait for the result.
-        if (rclcpp::spin_until_future_complete(this->shared_from_this(), result) == rclcpp::FutureReturnCode::SUCCESS) {
-          RCLCPP_INFO(this->get_logger(), "[Odometry2]: GettingOdom successful!");
-          send_odom_ready_ = true;
-        } else {
-          RCLCPP_ERROR(this->get_logger(), "[Odometry2]: Failed to call service GettingOdom");
-        }
-      }
-    } else {
-      /* RCLCPP_INFO(this->get_logger(), "[%s]: Initialized: %s, GPS: %s, HECTOR: %s", this->get_name(), is_initialized_ ? "TRUE" : "FALSE", */
-      /*             getting_pixhawk_odom_ ? "TRUE" : "FALSE", getting_hector_ ? "TRUE" : "FALSE"); */
     }
   }
 }
@@ -538,7 +480,7 @@ void Odometry2::publishTF() {
   {
     std::scoped_lock lock(mutex_estimator_source_);
     if (estimator_source_.type == fog_msgs::msg::EstimatorType::GPS) {
-      std::scoped_lock lock(mutex_gps_);
+      /* std::scoped_lock lock(mutex_gps_); */
 
       tf1.header.stamp            = this->get_clock()->now();
       tf1.header.frame_id         = ned_origin_frame_;
@@ -558,14 +500,15 @@ void Odometry2::publishTF() {
       tf1.transform.translation.x = 0;
       tf1.transform.translation.y = 0;
       tf1.transform.translation.z = 0;
-      tf1.transform.rotation.w    = q.getW();
-      tf1.transform.rotation.x    = q.getX();
-      tf1.transform.rotation.y    = q.getY();
-      tf1.transform.rotation.z    = q.getZ();
+      q.setRPY(-M_PI, 0, 0);
+      tf1.transform.rotation.w = q.getW();
+      tf1.transform.rotation.x = q.getX();
+      tf1.transform.rotation.y = q.getY();
+      tf1.transform.rotation.z = q.getZ();
       tf_broadcaster_->sendTransform(tf1);
 
     } else if (estimator_source_.type == fog_msgs::msg::EstimatorType::HECTOR) {
-      std::scoped_lock lock(mutex_hector_);
+      /* std::scoped_lock lock(mutex_hector_); */
 
       geometry_msgs::msg::TransformStamped tf1;
       tf1.header.stamp            = this->get_clock()->now();
@@ -586,10 +529,11 @@ void Odometry2::publishTF() {
       tf1.transform.translation.x = 0;
       tf1.transform.translation.y = 0;
       tf1.transform.translation.z = 0;
-      tf1.transform.rotation.w    = q.getW();
-      tf1.transform.rotation.x    = q.getX();
-      tf1.transform.rotation.y    = q.getY();
-      tf1.transform.rotation.z    = q.getZ();
+      q.setRPY(0, 0, 0);
+      tf1.transform.rotation.w = q.getW();
+      tf1.transform.rotation.x = q.getX();
+      tf1.transform.rotation.y = q.getY();
+      tf1.transform.rotation.z = q.getZ();
       tf_broadcaster_->sendTransform(tf1);
     } else {
       RCLCPP_ERROR(this->get_logger(), " '%s' is not a valid source of odometry", estimator_source_.name.c_str());
@@ -666,6 +610,7 @@ bool Odometry2::changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desir
   fog_msgs::msg::EstimatorType target_estimator = desired_estimator;
   target_estimator.name                         = estimator_type_names_[target_estimator.type];
 
+  RCLCPP_INFO(this->get_logger(), "test 5");
   // Return if already active
   {
     std::scoped_lock lock(mutex_estimator_source_);
@@ -674,10 +619,11 @@ bool Odometry2::changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desir
       return true;
     }
   }
+  RCLCPP_INFO(this->get_logger(), "test 6");
   // Check odometry source availability
   if (target_estimator.type == fog_msgs::msg::EstimatorType::GPS) {
 
-    if (!getting_gps_) {
+    if (!getting_pixhawk_odom_) {
       RCLCPP_ERROR(this->get_logger(), "[Odometry2] Cannot transition to GPS type. GPS source is not active.");
       return false;
     }
@@ -691,6 +637,7 @@ bool Odometry2::changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desir
     RCLCPP_ERROR(this->get_logger(), "[Odometry2] Rejected transition to invalid types %s", target_estimator.name.c_str());
     return false;
   }
+  RCLCPP_INFO(this->get_logger(), "test 7");
 
   {
     std::scoped_lock lock(mutex_estimator_source_);

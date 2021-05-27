@@ -4,6 +4,7 @@ from launch_ros.actions import Node
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 import os
+import sys
 
 def generate_launch_description():
 
@@ -13,6 +14,9 @@ def generate_launch_description():
     pkg_share_path = get_package_share_directory(pkg_name)
     
     ld.add_action(launch.actions.DeclareLaunchArgument("use_sim_time", default_value="false"))
+
+    ld.add_action(launch.actions.DeclareLaunchArgument("debug", default_value="false"))
+    dbg_sub = launch.substitutions.PythonExpression(['"" if "false" == "', launch.substitutions.LaunchConfiguration("debug"), '" else "debug_ros2launch ' + os.ttyname(sys.stdout.fileno()) + '"'])
 
     DRONE_DEVICE_ID=os.getenv('DRONE_DEVICE_ID')
 
@@ -38,12 +42,17 @@ def generate_launch_description():
                     ("~/timesync_in", "/" + DRONE_DEVICE_ID + "/Timesync_PubSubTopic"),
                     ("~/gps_in", "/" + DRONE_DEVICE_ID + "/VehicleGlobalPosition_PubSubTopic"),
                     ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
+                    ("~/hector_pose_in", "/" + DRONE_DEVICE_ID + "/slam_out_pose"),
 
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
+
+                    ("~/get_origin", "~/get_origin"),
+                    ("~/odom_available", "~/odom_available"),
                 ],
             ),
         ],
         output='screen',
+        prefix=dbg_sub,
         parameters=[{"use_sim_time": launch.substitutions.LaunchConfiguration("use_sim_time")},],
     ))
 
