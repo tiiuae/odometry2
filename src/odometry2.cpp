@@ -44,7 +44,6 @@ using namespace std::placeholders;
 
 namespace odometry2
 {
-#define POINTS_SCALE 0.3
 
 /* class Odometry2 //{ */
 class Odometry2 : public rclcpp::Node {
@@ -314,11 +313,13 @@ bool Odometry2::getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Re
   }
   if (odom_ready_) {
     response->value = true;
-    RCLCPP_INFO(this->get_logger(), "[%s]: getOdometry service responded!", this->get_name());
+    auto &clk       = *this->get_clock();
+    RCLCPP_INFO_THROTTLE(this->get_logger(), clk, 1000, "[%s]: getOdometry service responded!", this->get_name());
 
   } else {
     response->value = false;
-    RCLCPP_WARN(this->get_logger(), "[%s]: Waiting for Odometry availability!", this->get_name());
+    auto &clk       = *this->get_clock();
+    RCLCPP_WARN_THROTTLE(this->get_logger(), clk, 1000, "[%s]: Waiting for Odometry availability!", this->get_name());
     return false;
   }
   return true;
@@ -332,13 +333,13 @@ bool Odometry2::getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin
     return false;
   }
   if (getting_gps_) {
-    RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin service responded!", this->get_name());
-    /* response->latitude  = ref->latitude_deg; */
-    /* response->longitude = ref->longitude_deg; */
+    response->latitude  = ref.latitude_deg;
+    response->longitude = ref.longitude_deg;
     response->success = true;
     RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin service responded!", this->get_name());
   } else {
-    RCLCPP_WARN(this->get_logger(), "[%s]: GPS origin not set yet!", this->get_name());
+    auto &clk       = *this->get_clock();
+    RCLCPP_WARN_THROTTLE(this->get_logger(), clk, 1000, "[%s]: GPS origin not set yet!", this->get_name());
     response->success = false;
     return false;
   }
