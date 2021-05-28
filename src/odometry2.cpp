@@ -18,6 +18,7 @@
 #include <px4_msgs/msg/vehicle_global_position.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/timesync.hpp>
+#include <px4_msgs/msg/sensor_baro.hpp>
 
 #include <mavsdk/geometry.h>
 
@@ -52,12 +53,13 @@ public:
   Odometry2(rclcpp::NodeOptions options);
 
 private:
-  bool is_initialized_ = false;
-  /* bool getting_garmin_       = false; */
+  bool is_initialized_    = false;
   bool callbacks_enabled_ = false;
 
+  std::atomic_bool getting_garmin_       = false;
   std::atomic_bool getting_pixhawk_odom_ = false;
   std::atomic_bool getting_hector_       = false;
+  std::atomic_bool getting_baro_         = false;
   std::atomic_bool odom_ready_           = false;
   std::atomic_bool getting_gps_          = false;
 
@@ -113,15 +115,17 @@ private:
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr              timesync_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr gps_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr       pixhawk_odom_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr            baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr      hector_pose_subscriber_;
-  /* rclcpp::Subscription<sensor_msgs::msg::Range> SharedPtr               garmin_subscriber_; */
+  rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr              garmin_subscriber_;
 
   // subscriber callbacks
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
   void gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::UniquePtr msg);
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
   void hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg);
-  /* void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg); */
+  void baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg);
+  void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg);
 
   // services provided
   rclcpp::Service<fog_msgs::srv::ChangeEstimator>::SharedPtr change_odometry_source_;
@@ -207,8 +211,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
       this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", 10, std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
   hector_pose_subscriber_ =
       this->create_subscription<geometry_msgs::msg::PoseStamped>("~/hector_pose_in", 10, std::bind(&Odometry2::hectorPoseCallback, this, _1));
-  /* garmin_subscriber_ = */
-  /* this->create_subscription<sensor_msgs::msg::Range>("~/garmin_in", 10, std::bind(&Odometry2::garminCallback, this, _1)); */
+  garmin_subscriber_ = this->create_subscription<sensor_msgs::msg::Range>("~/garmin_in", 10, std::bind(&Odometry2::garminCallback, this, _1));
+  baro_subscriber_   = this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", 10, std::bind(&Odometry2::baroCallback, this, _1));
 
   // service handlers
   change_odometry_source_ =
@@ -295,6 +299,8 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     ori_hector_[2] = msg->pose.orientation.y;
     ori_hector_[3] = msg->pose.orientation.z;
   }
+
+  /* TODO: Hector state estimator correction step */
 
   getting_hector_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
@@ -394,15 +400,29 @@ bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::Cha
 }
 //}
 
-/* /1* garminCallback //{ *1/ */
-/* void Odometry2::garminCallback(const sensor_msgs::msg::Range msg) { */
-/*   if (!is_initialized_) { */
-/*     return; */
-/*   } */
-/*   getting_garmin_ = true; */
-/*   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name()); */
-/* } */
-/* //} */
+/* baroCallback //{ */
+void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
+  if (!is_initialized_) {
+    return;
+  }
+  getting_baro_ = true;
+  RCLCPP_INFO_ONCE(this->get_logger(), "Getting baro!");
+
+  /* TODO: Correction step for altitude estimator */
+}
+//}
+
+/* garminCallback //{ */
+void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
+  if (!is_initialized_) {
+    return;
+  }
+  getting_garmin_ = true;
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name());
+
+  /* TODO: Correction step for altitude estimator */
+}
+//}
 
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
