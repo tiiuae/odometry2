@@ -29,6 +29,9 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
 add_library(odometry2 SHARED
   src/odometry2.cpp
+  src/altitude_estimator.cpp
+  src/heading_estimator.cpp
+  src/lateral_estimator.cpp
   )
 
 target_compile_definitions(odometry2

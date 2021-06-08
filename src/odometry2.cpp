@@ -36,6 +36,14 @@
 #include <std_msgs/msg/color_rgba.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include <mrs_lib/median_filter.h>
+#include <mrs_lib/geometry.h>
+
+#include "types.h"
+#include "altitude_estimator.h"
+#include "heading_estimator.h"
+#include "lateral_estimator.h"
+
 /* defines //{ */
 
 #define NAME_OF(v) #v
@@ -95,11 +103,40 @@ private:
   std::atomic<float> pos_hector_[3];
   std::atomic<float> ori_hector_[4];
   /* std::mutex mutex_hector_; */
+  int c_hector_init_msgs_ = 0;
+  double hector_hdg_previous_ = 0.0;
 
   // Vehicle local position
   std::atomic<float> pos_local_[3];
   std::atomic<float> ori_local_[4];
   /* std::mutex mutex_local_; */
+
+  // Altitude estimation
+  std::shared_ptr<AltitudeEstimator> garmin_alt_estimator_;
+  std::vector<alt_R_t> R_alt_vec_;
+
+  std::unique_ptr<MedianFilter> alt_mf_garmin_;
+  std::atomic<double> garmin_alt_correction_;
+  std::atomic_bool got_garmin_alt_correction_;
+
+  std::atomic<double> baro_alt_correction_;
+  std::atomic<double> baro_alt_correction_prev_;
+  std::atomic_bool got_baro_alt_correction_;
+  ros::Time time_baro_prev_;
+
+  // Heading estimation
+  std::shared_ptr<HeadingEstimator> hector_hdg_estimator_;
+  std::vector<hdg_R_t> R_hdg_vec_;
+
+  std::atomic<double> hector_hdg_correction_;
+  std::atomic_bool got_hector_hdg_correction_;
+
+  // Lateral estimation
+  std::shared_ptr<LateralEstimator> hector_lat_estimator_;
+  std::vector<lat_R_t> R_lat_vec_;
+
+  std::atomic<double> hector_lat_correction_x_;
+  std::atomic_bool got_hector_lat_correction_;
 
   // Odometry switch
   fog_msgs::msg::EstimatorType    estimator_source_;
@@ -149,6 +186,7 @@ private:
   void publishTF();
   void publishStaticTF();
   void publishLocalOdom();
+  void updateEstimators();
 
   geometry_msgs::msg::PoseStamped transformBetween(std::string frame_from, std::string frame_to);
   std_msgs::msg::ColorRGBA        generateColor(const double r, const double g, const double b, const double a);
@@ -157,6 +195,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::TimerBase::SharedPtr     odometry_timer_;
   void                             odometryRoutine(void);
+  ros::Time                        time_odometry_timer_prev_;
 
   // utils
   template <class T>
@@ -196,6 +235,90 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   //}
 
+/* initialize altitude estimation //{*/
+  ROS_INFO("[Odometry]: Loading altitude estimation parameters");
+
+  /* altitude median filters //{ */
+
+  double buffer_size, max_valid, min_valid, max_diff;
+
+  // We want to gate the measurements before median filtering to prevent the median becoming an invalid value
+  min_valid = -1000.0;
+  max_valid = 1000.0;
+
+  // Garmin
+  param_loader.loadParam("altitude/median_filter/garmin/buffer_size", buffer_size);
+  param_loader.loadParam("altitude/median_filter/garmin/max_diff", max_diff);
+  alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff);
+
+  //}
+
+  /* altitude measurement min and max value gates //{ */
+
+  param_loader.loadParam("altitude/gate/garmin/min", _garmin_min_valid_alt_);
+  param_loader.loadParam("altitude/gate/garmin/max", _garmin_max_valid_alt_);
+
+  //}
+
+  /* excessive tilt //{ */
+
+  double excessive_tilt_tmp;
+  param_loader.loadParam("altitude/excessive_tilt", excessive_tilt_tmp);
+  _excessive_tilt_sq_ = std::pow(excessive_tilt_tmp, 2);
+
+  //}
+
+  /* altitude measurement covariances (R matrices) //{ */
+
+    alt_R_t temp_matrix, R_alt;
+    param_loader.loadMatrixStatic("altitude/R/garmin" temp_matrix);
+    R_alt = R_alt.Identity() * temp_matrix(0);
+    R_alt_vec_.push_back(R_alt);
+    param_loader.loadMatrixStatic("altitude/R/baro" temp_matrix);
+    R_alt = R_alt.Identity() * temp_matrix(0);
+    R_alt_vec_.push_back(R_alt);
+
+  //}
+
+  /* altitude process covariance (Q matrix) //{ */
+
+  alt_Q_t Q_alt;
+  param_loader.loadMatrixStatic("altitude/Q", Q_alt);
+
+  //}
+
+  // initialize altitude estimator
+  garmin_alt_estimator_ = std::make_shared<AltitudeEstimator>("garmin", Q_alt, R_alt_vec_);
+/*//}*/
+
+/* initialize heading estimation //{*/
+  ROS_INFO("[Odometry]: Loading heading estimation parameters");
+
+  /* heading measurement covariances (R matrices) //{ */
+
+    hdg_R_t temp_matrix, R_hdg;
+    param_loader.loadMatrixStatic("heading/R/hector" temp_matrix);
+    R_hdg = R_hdg.Identity() * temp_matrix(0);
+    R_hdg_vec_.push_back(R_hdg);
+    param_loader.loadMatrixStatic("heading/R/gyro" temp_matrix);
+    R_hdg = R_hdg.Identity() * temp_matrix(0);
+    R_hdg_vec_.push_back(R_hdg);
+
+  //}
+
+  /* heading process covariance (Q matrix) //{ */
+
+  hdg_Q_t Q_hdg;
+  param_loader.loadMatrixStatic("heading/Q", Q_hdg);
+
+  //}
+
+  // initialize heading estimator
+  hector_hdg_estimator_ = std::make_shared<HeadingEstimator>("hector", Q_hdg, R_hdg_vec_);
+
+/*//}*/
+
+  // initialize lateral estimation
   estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::HECTOR));
   estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::GPS));
 
@@ -280,6 +403,7 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 
   getting_pixhawk_odom_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting pixhawk odometry!", this->get_name());
+
 }
 //}
 
@@ -304,6 +428,37 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   getting_hector_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
+
+  // wait for hector convergence to initial position
+  if (c_hector_init_msgs_++ < 10) {
+    ROS_INFO("[Odometry]: Hector pose #%d - x: %f y: %f", c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
+    return;
+  }
+
+  /* get heading from hector orientation quaternion //{*/
+
+  double hdg_hector;
+  try {
+  /* TODO: implement getHeading() */
+    hdg_hector = odometry_utils::getHeading(msg->pose.orientation);
+    
+  // unwrap heading to prevent discrete jumps
+  hdg_hector = mrs_lib::geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
+  hector_hdg_previous_ = hdg_hector;
+
+  ROS_INFO_ONCE("[Odometry]: Getting hector heading corrections");
+
+  }
+  catch (...) {
+    ROS_WARN("[Odometry]: failed to getHeading() from hector orientation, dropping this correction");
+  }
+
+  hector_
+
+/*//}*/
+
+   
+
 }
 //}
 
@@ -408,7 +563,36 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   getting_baro_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "Getting baro!");
 
-  /* TODO: Correction step for altitude estimator */
+  /* TODO: get AGL altitude from pressure, temperature and takeoff ASL altitude */
+  double measurement = getAltitudeFromPressure(msg->pressure, msg->temperature);
+
+  if (!std::isfinite(measurement)) {
+    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"measurement\" (baroCallback) !!!");
+    return;
+  }
+
+  if (!got_baro_alt_correction_) {
+    baro_alt_correction_prev_ = baro_alt_correction_;
+    time_baro_prev_ = ros::Time::now();
+    got_baro_alt_correction_ = true;
+    return;
+  }
+    // calculate time since last estimators update
+    double    dt;
+    ros::Time time_now    = ros::Time::now();
+    dt                    = (time_now - time_baro_prev_).toSec();
+    time_baro_prev_ = time_now;
+
+    if (dt <= 0.0) {
+      ROS_DEBUG_THROTTLE(1.0, "[Odometry]: baro callback dt=%f, discarding correction.", dt);
+      return;
+    }
+
+
+  baro_alt_correction_ = (measurement - baro_alt_correction_prev_) / dt;
+  baro_alt_correction_prev_ = measurement;
+
+  ROS_INFO_ONCE("[Odometry]: Getting barometric altitude corrections");
 }
 //}
 
@@ -421,6 +605,25 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name());
 
   /* TODO: Correction step for altitude estimator */
+
+  double measurement = msg->range;
+  if (!std::isfinite(measurement)) {
+    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"measurement\" (garminCallback) !!!");
+    return;
+  }
+
+  // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
+  if (isUavFlying()) {
+    if (!alt_mf_garmin_->isValid(measurement)) {
+      ROS_WARN_THROTTLE(1.0, "[Odometry]: Garmin measurement %f declined by median filter.", measurement);
+      return;
+    }
+  }
+
+  garmin_alt_correction_ = measurement;
+  got_garmin_alt_correction_ = true;
+
+  ROS_INFO_ONCE("[Odometry]: Getting Garmin altitude corrections");
 }
 //}
 
@@ -434,6 +637,9 @@ void Odometry2::odometryRoutine(void) {
       publishStaticTF();
       return;
     }
+
+    updateEstimators();
+
     publishTF();
     publishLocalOdom();
   }
@@ -683,6 +889,52 @@ void Odometry2::setupEstimator(const std::string &type) {
 }
 
 //}
+
+/* updateEstimators //{*/
+void Odometry2::updateEstimators() {
+
+    // calculate time since last estimators update
+    double    dt;
+    ros::Time time_now    = ros::Time::now();
+    dt                    = (time_now - time_odometry_timer_prev_).toSec();
+    time_odometry_timer_prev_ = time_now;
+
+    if (dt <= 0.0) {
+      ROS_DEBUG_THROTTLE(1.0, "[Odometry]: odometry timer dt=%f, skipping estimator update.", dt);
+      return;
+    }
+
+    /* altitude estimator update and predict //{*/
+
+    if (got_garmin_alt_correction_) {
+      garmin_alt_estimator_->doCorrection(garmin_alt_correction_, ALT_GARMIN);
+    }
+
+    if (got_baro_alt_correction_) {
+      garmin_alt_estimator_->doCorrection(baro_alt_correction_, ALT_BARO);
+    }
+
+    garmin_alt_estimator_->doPrediction(0, dt);
+
+    /*//}*/
+
+    /* heading estimator update and predict //{*/
+
+    if (got_hector_hdg_correction_) {
+      hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_HECTOR);
+    }
+
+    if (got_gyro_hdg_correction_) {
+      hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_GYRO);
+    }
+
+    hector_hdg_estimator_->doPrediction(0, dt);
+
+    /*//}*/
+
+}
+
+/*//}*/
 
 /* //{ printOdometryDiag */
 std::string Odometry2::printOdometryDiag() {

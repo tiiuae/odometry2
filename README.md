@@ -9,5 +9,13 @@
 * [ ] Obtain z coordinate separately for hector fusion
 * [ ] Obtain Hector covariances
 
+## Estimation notes
+
+* Fuse baro directly or z position from pixhawk odom local?
+* [ ] getHeading 
+* [ ] getHeadingRate
+
+
+
 
 
