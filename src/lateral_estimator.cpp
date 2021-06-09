@@ -1,62 +1,60 @@
-#include "StateEstimator.h"
+#include "LateralEstimator.h"
 
-namespace mrs_uav_odometry
+namespace odometry2
 {
 
-/*  //{ StateEstimator() */
+/*  //{ LateralEstimator() */
 
 // clang-format off
-StateEstimator::StateEstimator(
+LateralEstimator::LateralEstimator(
     const std::string &estimator_name,
-    const std::vector<bool> &fusing_measurement,
-    const LatMat &Q,
-    const std::vector<LatStateCol1D> &H,
-    const std::vector<Mat1> &R_arr,
-    const bool use_repredictor)
+    const Q_t &Q,
+    const std::vector<R_t> &R_multi)
     :
     m_estimator_name(estimator_name),
-    m_fusing_measurement(fusing_measurement),
     m_Q(Q),
-    m_H(H),
-    m_R_arr(R_arr),
-    m_use_repredictor(use_repredictor)
+    m_R_multi(R_multi)
   {
 
   // clang-format on
 
   // Number of states
-  m_n_states = sc_x.x.size();
+  m_n_states = m_sc.x.size();
 
   // Number of measurement types
-  m_n_measurement_types = m_fusing_measurement.size();
+  m_n_measurement_types = 1;
+
+  alt_H_t pos_H, vel_H, acc_H;
+  pos_H << 1, 0, 0;
+  m_H_multi = {pos_H};
 
   /*  //{ sanity checks */
 
   // Check size of m_Q
   if (m_Q.rows() != m_n_states) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".StateEstimator()"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".LateralEstimator()"
               << "): wrong size of \"Q.rows()\". Should be: " << m_n_states << " is:" << m_Q.rows() << std::endl;
     return;
   }
 
   if (m_Q.cols() != m_n_states) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".StateEstimator()"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".LateralEstimator()"
               << "): wrong size of \"Q.cols()\". Should be: " << m_n_states << " is:" << m_Q.cols() << std::endl;
     return;
   }
 
-  // Check size of m_R_arr
-  if (m_R_arr.size() != m_n_measurement_types) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".StateEstimator()"
-              << "): wrong size of \"m_R_arr\". Should be: " << m_n_measurement_types << " is:" << m_R_arr.size() << std::endl;
+  // Check size of m_R_multi
+  if (m_R_multi.size() != m_n_measurement_types) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".LateralEstimator()"
+              << "): wrong size of \"m_R_multi\". Should be: " << m_n_measurement_types << " is:" << m_R_multi.size() << std::endl;
     return;
   }
 
-  // Check size of m_R_arr elements
-  for (size_t i = 0; i < m_R_arr.size(); i++) {
-    if (m_R_arr[i].rows() != 1 || m_R_arr[i].cols() != 1) {
-      std::cerr << "[StateEstimator]: " << m_estimator_name << ".StateEstimator()"
-                << "): wrong size of \"m_R_arr[" << i << "]\". Should be: (1, " << 1 << ") is: (" << m_R_arr[i].rows() << ", " << m_R_arr[i].cols() << ")"
+  // Check size of m_R_multi elements
+  for (size_t i = 0; i < m_R_multi.size(); i++) {
+    if (m_R_multi[i].rows() != 1 || m_R_multi[i].cols() != 1) {
+      std::cerr << "[LateralEstimator]: " << m_estimator_name << ".LateralEstimator()"
+                << "): wrong size of \"m_R_multi[" << i << "]\". Should be: (1, " << 1 << ") is: (" << m_R_multi[i].rows() << ", " << m_R_multi[i].cols() << ")"
                 << std::endl;
       return;
     }
@@ -69,38 +67,20 @@ StateEstimator::StateEstimator(
   const x_t        x0    = x_t::Zero();
   P_t              P_tmp = P_t::Identity();
   const P_t        P0    = 1000.0 * P_tmp;
-  const statecov_t scx0({x0, P0});
-  const statecov_t scy0({x0, P0});
-  sc_x               = scx0;
-  sc_y               = scy0;
+  const statecov_t sc0({x0, P0});
+  sc_               = sc0;
   const u_t       u0 = u_t::Zero();
   const ros::Time t0 = ros::Time(0);
 
-  if (m_use_repredictor) {
-    std::cout << "[StateEstimator]: Using repredictor in " << m_estimator_name.c_str() << " estimator." << std::endl;
-    // Initialize separate LKF models for each H matrix
-    for (size_t i = 0; i < m_H.size(); i++) {
-      std::vector<H_t> curr_H{m_H[i]};
-      mp_lkf_vector.push_back(std::make_shared<mrs_lib::LKF_MRS_odom>(curr_H, 0.01));
-    }
-    // Initialize repredictor
-    mp_rep_x = std::make_unique<rep_lat_t>(x0, P0, u0, Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-    mp_rep_y = std::make_unique<rep_lat_t>(x0, P0, u0, Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-  } else {
     // Initialize a single LKF
-    mp_lkf_x = std::make_unique<mrs_lib::LKF_MRS_odom>(m_H, 0.01);
-    mp_lkf_y = std::make_unique<mrs_lib::LKF_MRS_odom>(m_H, 0.01);
-  }
+    mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H);
 
-  std::cout << "[StateEstimator]: New StateEstimator initialized " << std::endl;
+  std::cout << "[LateralEstimator]: New LateralEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
-  std::cout << " fusing measurements: " << std::endl;
-  for (size_t i = 0; i < m_fusing_measurement.size(); i++) {
-    std::cout << m_fusing_measurement[i] << " ";
-  }
-  std::cout << std::endl << " R_arr: " << std::endl;
-  for (size_t i = 0; i < m_R_arr.size(); i++) {
-    std::cout << m_R_arr[i] << std::endl;
+
+  std::cout << std::endl << " R_multi: " << std::endl;
+  for (size_t i = 0; i < m_R_multi.size(); i++) {
+    std::cout << m_R_multi[i] << std::endl;
   }
   std::cout << std::endl << " H_arr: " << std::endl;
   for (size_t i = 0; i < m_H.size(); i++) {
@@ -115,7 +95,7 @@ StateEstimator::StateEstimator(
 
 /*  //{ doPrediction() */
 
-bool StateEstimator::doPrediction(const Vec2 &input, double dt, const ros::Time &input_stamp, const ros::Time &predict_stamp) {
+bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
 
   /*  //{ sanity checks */
 
@@ -124,46 +104,42 @@ bool StateEstimator::doPrediction(const Vec2 &input, double dt, const ros::Time 
 
   // Check size of input
   if (input.size() != 2) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
               << "): wrong size of \"input\". Should be: " << 2 << " is:" << input.size() << std::endl;
     return false;
   }
 
   // Check for NaNs
-  if (!std::isfinite(input(0))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
-              << "): NaN detected in variable \"input(0)\"." << std::endl;
+  if (!std::isfinite(x)) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const double &x=" << x << ", double dt=" << dt
+              << "): NaN detected in variable \"x\"." << std::endl;
     return false;
   }
 
-  if (!std::isfinite(input(1))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
-              << "): NaN detected in variable \"input(1)\"." << std::endl;
+  if (!std::isfinite(y)) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const double &y=" << y << ", double dt=" << dt
+              << "): NaN detected in variable \"y\"." << std::endl;
     return false;
   }
 
   if (!std::isfinite(dt)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
               << "): NaN detected in variable \"dt\"." << std::endl;
     return false;
   }
 
   // Check for non-positive dt
   if (dt <= 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
               << "): \"dt\" should be > 0." << std::endl;
     return false;
   }
 
   //}
 
-  /* std::cout << "[StateEstimator]: " << m_estimator_name << " fusing input: " << input << " with time step: " << dt << std::endl; */
+  /* std::cout << "[LateralEstimator]: " << m_estimator_name << " fusing input: " << input << " with time step: " << dt << std::endl; */
 
-  u_t u_x;
-  u_t u_y;
-
-  u_x << input(0);
-  u_y << input(1);
+  u_t u << x, y;
 
   /* LatMat newA = m_A; */
   /* newA(0, 1)           = dt; */
@@ -181,15 +157,7 @@ bool StateEstimator::doPrediction(const Vec2 &input, double dt, const ros::Time 
     /* mp_lkf_y->iterateWithoutCorrection(); */
     try {
       // Apply the prediction step
-      if (m_use_repredictor) {
-        mp_rep_x->addInputChangeWithNoise(u_x, m_Q, input_stamp, mp_lkf_vector[0]);
-        sc_x = mp_rep_x->predictTo(predict_stamp);
-        mp_rep_y->addInputChangeWithNoise(u_y, m_Q, input_stamp, mp_lkf_vector[0]);
-        sc_y = mp_rep_y->predictTo(predict_stamp);
-      } else {
-        sc_x = mp_lkf_x->predict(sc_x, u_x, m_Q, dt);
-        sc_y = mp_lkf_y->predict(sc_y, u_y, m_Q, dt);
-      }
+        m_sc = mp_lkf->predict(m_sc, u, m_Q, dt);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -197,11 +165,11 @@ bool StateEstimator::doPrediction(const Vec2 &input, double dt, const ros::Time 
     }
   }
 
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: prediction step" << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: input  x:" << u_x << std::endl << "y: " << u_y << std::endl << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: m_Q:" << m_Q << std::endl << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: dt:" << dt << std::endl << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: state  x:" << sc_x.x << std::endl << "y: " << sc_y.x << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: prediction step" << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: input  x:" << u_x << std::endl << "y: " << u_y << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: m_Q:" << m_Q << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: dt:" << dt << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: state  x:" << sc_x.x << std::endl << "y: " << sc_y.x << std::endl << std::endl); */
 
   return true;
 }
@@ -210,81 +178,56 @@ bool StateEstimator::doPrediction(const Vec2 &input, double dt, const ros::Time 
 
 /*  //{ doCorrection() */
 
-bool StateEstimator::doCorrection(const Vec2 &measurement, int measurement_type, const ros::Time &meas_stamp, const ros::Time &predict_stamp) {
+bool LateralEstimator::doCorrection(const double x, const double y, int measurement_type) {
 
   /*  //{ sanity checks */
 
   if (!m_is_initialized)
     return false;
 
-  // Check size of measurement
-  if (measurement.size() != 2) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doCorrection(const Eigen::VectorXd &measurement=" << measurement
-              << ", int measurement_type=" << measurement_type << "): wrong size of \"input\". Should be: " << 2 << " is:" << measurement.size() << std::endl;
-    return false;
-  }
-
   // Check for NaNs
-  if (!std::isfinite(measurement(0))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doCorrection(const Eigen::VectorXd &measurement=" << measurement
-              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement(0)\"." << std::endl;
+  if (!std::isfinite(x)) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
+              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"x\"." << std::endl;
     return false;
   }
 
-  if (!std::isfinite(measurement(1))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doCorrection(const Eigen::VectorXd &measurement=" << measurement
+  if (!std::isfinite(y)) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double y=" << y
               << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement(0)\"." << std::endl;
     return false;
   }
 
   if (!std::isfinite(measurement_type)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doCorrection(const Eigen::VectorXd &measurement=" << measurement
-              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement(0)\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
+              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement_type\"." << std::endl;
     return false;
   }
 
   // Check for valid value of measurement
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".doCorrection(const Eigen::VectorXd &measurement=" << measurement
+  if (measurement_type < 0) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
               << ", int measurement_type=" << measurement_type << "): invalid value of \"measurement_type\"." << std::endl;
-    return false;
-  }
-
-  // Check whether the measurement type is fused by this estimator
-  if (!m_fusing_measurement[measurement_type]) {
     return false;
   }
 
   //}
 
-  z_t z_x;
-  z_t z_y;
-  R_t R;
-
-  z_x << measurement(0);
-  z_y << measurement(1);
-  R << m_R_arr[measurement_type];
+  z_t z << x, y;
+  R << m_R_multi[measurement_type];
 
   {
     std::scoped_lock lock(mutex_lkf);
 
     /* mp_lkf_x->setP(m_P_arr[measurement_type]); */
-    /* mp_lkf_x->setMeasurement(mes_vec_x, m_R_arr[measurement_type]); */
+    /* mp_lkf_x->setMeasurement(mes_vec_x, m_R_multi[measurement_type]); */
     /* mp_lkf_x->doCorrection(); */
     /* mp_lkf_y->setP(m_P_arr[measurement_type]); */
-    /* mp_lkf_y->setMeasurement(mes_vec_y, m_R_arr[measurement_type]); */
+    /* mp_lkf_y->setMeasurement(mes_vec_y, m_R_multi[measurement_type]); */
     /* mp_lkf_y->doCorrection(); */
 
     try {
-      if (m_use_repredictor) {
-        mp_rep_x->addMeasurement(z_x, R, meas_stamp, mp_lkf_vector[measurement_type]);
-        sc_x = mp_rep_x->predictTo(predict_stamp);
-        mp_rep_y->addMeasurement(z_y, R, meas_stamp, mp_lkf_vector[measurement_type]);
-        sc_y = mp_rep_y->predictTo(predict_stamp);
-      } else {
-        sc_x = mp_lkf_x->correct(sc_x, z_x, R, measurement_type);
-        sc_y = mp_lkf_y->correct(sc_y, z_y, R, measurement_type);
-      }
+        m_sc = mp_lkf->correct(m_sc, z, R, measurement_type);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -293,10 +236,10 @@ bool StateEstimator::doCorrection(const Vec2 &measurement, int measurement_type,
   }
 
   /* if (measurement_type==1) { */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: correction type: " << measurement_type << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: corr  x:" << z_x << std::endl << "y: " << z_y << std::endl << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: R: " << R << std::endl << std::endl); */
-  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[StateEstimator]: state  x:" << sc_x.x << std::endl << "y: " << sc_y.x << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: correction type: " << measurement_type << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: corr  x:" << z_x << std::endl << "y: " << z_y << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: R: " << R << std::endl << std::endl); */
+  /* ROS_INFO_STREAM_THROTTLE(1.0,  "[LateralEstimator]: state  x:" << sc_x.x << std::endl << "y: " << sc_y.x << std::endl << std::endl); */
   /* } */
 
   return true;
@@ -306,7 +249,7 @@ bool StateEstimator::doCorrection(const Vec2 &measurement, int measurement_type,
 
 /*  //{ getStates() */
 
-bool StateEstimator::getStates(LatState2D &states) {
+bool LateralEstimator::getStates(x_t &states) {
 
   /*  //{ sanity checks */
 
@@ -317,8 +260,7 @@ bool StateEstimator::getStates(LatState2D &states) {
 
   std::scoped_lock lock(mutex_lkf);
 
-  states.col(0) = sc_x.x;
-  states.col(1) = sc_y.x;
+  states = m_sc;
 
   return true;
 }
@@ -327,7 +269,7 @@ bool StateEstimator::getStates(LatState2D &states) {
 
 /*  //{ getState() */
 
-bool StateEstimator::getState(int state_id, Vec2 &state) {
+bool LateralEstimator::getState(int state_id, double &state) {
 
   /*  //{ sanity checks */
 
@@ -336,13 +278,13 @@ bool StateEstimator::getState(int state_id, Vec2 &state) {
 
   // Check for NaNs
   if (!std::isfinite(state_id)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): NaN detected in variable \"state_id\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): NaN detected in variable \"state_id\"." << std::endl;
     return false;
   }
 
   // Check validity of state_id
   if (state_id < 0 || state_id > m_n_states - 1) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): Invalid value of \"state_id\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): Invalid value of \"state_id\"." << std::endl;
     return false;
   }
 
@@ -351,10 +293,9 @@ bool StateEstimator::getState(int state_id, Vec2 &state) {
   {
     std::scoped_lock lock(mutex_lkf);
 
-    /* std::cout << "[StateEstimator]: " << m_estimator_name << " getting value: " << mp_lkf_x->getState(state_id) << " of state: " << state_id << std::endl;
+    /* std::cout << "[LateralEstimator]: " << m_estimator_name << " getting value: " << mp_lkf_x->getState(state_id) << " of state: " << state_id << std::endl;
      */
-    state(0) = sc_x.x(state_id);
-    state(1) = sc_y.x(state_id);
+    state = m_sc.x(state_id);
   }
 
   return true;
@@ -364,7 +305,7 @@ bool StateEstimator::getState(int state_id, Vec2 &state) {
 
 /*  //{ getName() */
 
-std::string StateEstimator::getName(void) {
+std::string LateralEstimator::getName(void) {
   return m_estimator_name;
 }
 
@@ -372,7 +313,7 @@ std::string StateEstimator::getName(void) {
 
 /*  //{ setState() */
 
-bool StateEstimator::setState(int state_id, const Vec2 &state) {
+bool LateralEstimator::setState(int state_id, const double &state) {
 
   /*  //{ sanity checks */
 
@@ -381,35 +322,22 @@ bool StateEstimator::setState(int state_id, const Vec2 &state) {
     return false;
   }
 
-  // Check the size of state
-  if (state.size() != 2) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const Eigen::VectorXd &state=" << state
-              << "): wrong size of \"state.size()\". Should be: " << 2 << " is:" << state.size() << std::endl;
-    return false;
-  }
-
   // Check for NaNs
-  if (!std::isfinite(state(0))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const Eigen::VectorXd &state=" << state
-              << "): NaN detected in variable \"state(0)\"." << std::endl;
-    return false;
-  }
-
-  if (!std::isfinite(state(1))) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const Eigen::VectorXd &state=" << state
-              << "): NaN detected in variable \"state(1)\"." << std::endl;
+  if (!std::isfinite(state)) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const double &state=" << state
+              << "): NaN detected in variable \"state\"." << std::endl;
     return false;
   }
 
   if (!std::isfinite(state_id)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const Eigen::VectorXd &state=" << state
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const double &state=" << state
               << "): NaN detected in variable \"state_id\"." << std::endl;
     return false;
   }
 
   // Check validity of state_id
   if (state_id < 0 || state_id > m_n_states - 1) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const Eigen::VectorXd &state=" << state
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setState(int state_id=" << state_id << ", const double &state=" << state
               << "): Invalid value of \"state_id\"." << std::endl;
     return false;
   }
@@ -419,8 +347,7 @@ bool StateEstimator::setState(int state_id, const Vec2 &state) {
   {
     std::scoped_lock lock(mutex_lkf);
 
-    sc_x.x(state_id) = state(0);
-    sc_y.x(state_id) = state(1);
+    m_sc.x(state_id) = state;
   }
   /* ROS_INFO("[%s]: Set state %d of %s to x: %f y: %f. State after x: %f y: %f", ros::this_node::getName().c_str(), state_id, m_estimator_name.c_str(),
    * state(0), state(1), sc_x.x(state_id), sc_y.x(state_id)); */
@@ -432,31 +359,18 @@ bool StateEstimator::setState(int state_id, const Vec2 &state) {
 
 /*  //{ setStates() */
 
-bool StateEstimator::setStates(LatState2D &states) {
+bool LateralEstimator::setStates(const x_t &states) {
 
   /*  //{ sanity checks */
 
   if (!m_is_initialized)
     return false;
 
-  // Check size of states
-  if (states.rows() != m_n_states) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setStates()"
-              << ": wrong size of \"states\". Should be: " << m_n_states << " is: " << states.cols() << std::endl;
-    return false;
-  }
-
-  if (states.cols() != 2) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setStates()"
-              << ": wrong size of \"states\". Should be: " << 2 << " is:" << states.rows() << std::endl;
-    return false;
-  }
   //}
 
   {
     std::scoped_lock lock(mutex_lkf);
-    sc_x.x = states.col(0);
-    sc_y.x = states.col(1);
+    m_sc.x = states;
   }
 
   return true;
@@ -466,7 +380,7 @@ bool StateEstimator::setStates(LatState2D &states) {
 
 /*  //{ setR() */
 
-bool StateEstimator::setR(double cov, int measurement_type) {
+bool LateralEstimator::setR(double cov, int measurement_type) {
 
   /*  //{ sanity checks */
 
@@ -475,37 +389,37 @@ bool StateEstimator::setR(double cov, int measurement_type) {
 
   // Check for NaNs
   if (!std::isfinite(cov)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
               << "): NaN detected in variable \"cov\"." << std::endl;
     return false;
   }
 
   // Check for non-positive covariance
   if (cov <= 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
               << "): \"cov\" should be > 0." << std::endl;
     return false;
   }
 
   // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
+  if (measurement_type > m_n_measurement_types || measurement_type < 0) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
               << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
 
   //}
 
-  /* double old_cov = m_R_arr[measurement_type](0, 0); */
+  /* double old_cov = m_R_multi[measurement_type](0, 0); */
 
   {
     std::scoped_lock lock(mutex_lkf);
 
-    m_R_arr[measurement_type](0, 0) = cov;
+    m_R_multi[measurement_type](0, 0) = cov;
   }
 
-  /* std::cout << "[StateEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type << ")" */
-  /* << " Changed covariance from: " << old_cov << " to: " << m_R_arr[measurement_type](0, 0) << std::endl; */
+  /* std::cout << "[LateralEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type << ")" */
+  /* << " Changed covariance from: " << old_cov << " to: " << m_R_multi[measurement_type](0, 0) << std::endl; */
 
   return true;
 }
@@ -514,7 +428,7 @@ bool StateEstimator::setR(double cov, int measurement_type) {
 
 /*  //{ getR() */
 
-bool StateEstimator::getR(double &cov, int measurement_type) {
+bool LateralEstimator::getR(double &cov, int measurement_type) {
 
   /*  //{ sanity checks */
 
@@ -523,14 +437,14 @@ bool StateEstimator::getR(double &cov, int measurement_type) {
 
   // Check for NaNs
   if (!std::isfinite(measurement_type)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
               << "): NaN detected in variable \"measurement_type\"." << std::endl;
     return false;
   }
 
   // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
+  if (measurement_type > m_n_measurement_types || measurement_type < 0) {
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
               << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
@@ -540,7 +454,7 @@ bool StateEstimator::getR(double &cov, int measurement_type) {
   {
     std::scoped_lock lock(mutex_lkf);
 
-    cov = m_R_arr[measurement_type](0, 0);
+    cov = m_R_multi[measurement_type](0, 0);
   }
 
   return true;
@@ -550,7 +464,7 @@ bool StateEstimator::getR(double &cov, int measurement_type) {
 
 /*  //{ getQ() */
 
-bool StateEstimator::getQ(double &cov, const Eigen::Vector2i &idx) {
+bool LateralEstimator::getQ(double &cov, const Eigen::Vector2i &idx) {
 
   /*  //{ sanity checks */
 
@@ -559,7 +473,7 @@ bool StateEstimator::getQ(double &cov, const Eigen::Vector2i &idx) {
 
   // Check for index validity
   if (idx(0) > m_n_states || idx(1) > m_n_states || idx(0) < 0 || idx(1) < 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
               << "): \"idx\" should be < " << m_n_states << "." << std::endl;
     return false;
   }
@@ -579,7 +493,7 @@ bool StateEstimator::getQ(double &cov, const Eigen::Vector2i &idx) {
 
 /*  //{ setQ() */
 
-bool StateEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
+bool LateralEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
 
   /*  //{ sanity checks */
 
@@ -588,21 +502,21 @@ bool StateEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
 
   // Check for NaNs
   if (!std::isfinite(cov)) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
               << "): NaN detected in variable \"cov\"." << std::endl;
     return false;
   }
 
   // Check for non-positive covariance
   if (cov <= 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
               << "): \"cov\" should be > 0." << std::endl;
     return false;
   }
 
   // Check for index validity
   if (idx(0) > m_n_states || idx(1) > m_n_states || idx(0) < 0 || idx(1) < 0) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".setR(double cov=" << cov << ", int"
               << "): \"idx\" should be < " << m_n_states << "." << std::endl;
     return false;
   }
@@ -615,7 +529,7 @@ bool StateEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
     m_Q(idx(0), idx(1)) = cov;
   }
 
-  /* std::cout << "[StateEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type << ")" */
+  /* std::cout << "[LateralEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type << ")" */
   /* << " Changed covariance from: " << old_cov << " to: " << m_Q_arr[measurement_type](0, 0) << std::endl; */
 
   return true;
@@ -625,7 +539,7 @@ bool StateEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
 
 /*  //{ reset() */
 
-bool StateEstimator::reset(const LatState2D &states) {
+bool LateralEstimator::reset(const LatState2D &states) {
 
   /*  //{ sanity checks */
 
@@ -633,13 +547,13 @@ bool StateEstimator::reset(const LatState2D &states) {
     return false;
   // Check size of states
   if ((int)states.rows() != m_n_states) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
               << "): wrong size of \"states.rows()\". Should be: " << m_n_states << " is:" << states.rows() << std::endl;
     return false;
   }
 
   if (states.cols() != 2) {
-    std::cerr << "[StateEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
               << "): wrong size of \"states.cols()\". Should be: " << 2 << " is:" << states.cols() << std::endl;
     return false;
   }
@@ -648,7 +562,7 @@ bool StateEstimator::reset(const LatState2D &states) {
   for (int i = 0; i < states.rows(); i++) {
     for (int j = 0; j < states.cols(); j++) {
       if (!std::isfinite(states(i, j))) {
-        std::cerr << "[StateEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
+        std::cerr << "[LateralEstimator]: " << m_estimator_name << ".reset(const Eigen::MatrixXd &states="  // << states
                   << "): NaN detected in variable \"states(" << i << ", " << j << ")\"." << std::endl;
         return false;
       }
@@ -660,15 +574,8 @@ bool StateEstimator::reset(const LatState2D &states) {
   {
     std::scoped_lock lock(mutex_lkf);
 
-    sc_x.x = states.col(0);
-    sc_y.x = states.col(1);
+    m_sc.x = states;
 
-    if (m_use_repredictor) {
-      const u_t       u0 = u_t::Zero();
-      const ros::Time t0 = ros::Time(0);
-      mp_rep_x           = std::make_unique<rep_lat_t>(sc_x.x, sc_x.P, u0, m_Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-      mp_rep_y           = std::make_unique<rep_lat_t>(sc_y.x, sc_y.P, u0, m_Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-    }
   }
 
   return true;
@@ -676,4 +583,4 @@ bool StateEstimator::reset(const LatState2D &states) {
 
 //}
 
-}  // namespace mrs_uav_odometry
+}  // namespace odometry2

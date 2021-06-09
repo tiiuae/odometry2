@@ -117,11 +117,11 @@ private:
 
   std::unique_ptr<MedianFilter> alt_mf_garmin_;
   std::atomic<double> garmin_alt_correction_;
-  std::atomic_bool got_garmin_alt_correction_;
+  std::atomic_bool got_garmin_alt_correction_ = false;
 
   std::atomic<double> baro_alt_correction_;
   std::atomic<double> baro_alt_correction_prev_;
-  std::atomic_bool got_baro_alt_correction_;
+  std::atomic_bool got_baro_alt_correction_ = false;
   ros::Time time_baro_prev_;
 
   // Heading estimation
@@ -129,14 +129,14 @@ private:
   std::vector<hdg_R_t> R_hdg_vec_;
 
   std::atomic<double> hector_hdg_correction_;
-  std::atomic_bool got_hector_hdg_correction_;
+  std::atomic_bool got_hector_hdg_correction_ = false;
 
   // Lateral estimation
   std::shared_ptr<LateralEstimator> hector_lat_estimator_;
   std::vector<lat_R_t> R_lat_vec_;
 
-  std::atomic<double> hector_lat_correction_x_;
-  std::atomic_bool got_hector_lat_correction_;
+  std::atomic<double> hector_lat_correction_[2];
+  std::atomic_bool got_hector_lat_correction_ = false;;
 
   // Odometry switch
   fog_msgs::msg::EstimatorType    estimator_source_;
@@ -318,7 +318,28 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
 /*//}*/
 
-  // initialize lateral estimation
+  /* initialize lateral estimation //{*/
+  ROS_INFO("[Odometry]: Loading lateral estimation parameters");
+
+  /* lateral measurement covariances (R matrices) //{ */
+
+  lat_R_t temp_matrix, R_lat;
+  param_loader.loadMatrixStatic("lateral/R/hector" temp_matrix);
+  R_lat = R_lat.Identity() * temp_matrix(0);
+  R_lat_vec_.push_back(R_lat);
+
+  //}
+
+  /* lateral process covariance (Q matrix) //{ */
+
+  lat_Q_t Q_lat;
+  param_loader.loadMatrixStatic("lateral/Q", Q_lat);
+
+  //}
+  
+  hector_lat_estimator_ = std::make_shared<LateralEstimator>("hector", Q_lat, R_lat_vec_);
+  /*//}*/
+
   estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::HECTOR));
   estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::GPS));
 
@@ -428,6 +449,16 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   getting_hector_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
+  
+  if (!std::isfinite(msg->pose.position.x)) {
+    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!");
+    return;
+  }
+
+  if (!std::isfinite(msg->pose.position.y)) {
+    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!");
+    return;
+  }
 
   // wait for hector convergence to initial position
   if (c_hector_init_msgs_++ < 10) {
@@ -445,7 +476,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   // unwrap heading to prevent discrete jumps
   hdg_hector = mrs_lib::geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
   hector_hdg_previous_ = hdg_hector;
-
+  got_hector_hdg_correction_ = true;
   ROS_INFO_ONCE("[Odometry]: Getting hector heading corrections");
 
   }
@@ -453,11 +484,12 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     ROS_WARN("[Odometry]: failed to getHeading() from hector orientation, dropping this correction");
   }
 
-  hector_
+  hector_lat_correction_[0] = msg->pose.position.x
+  hector_lat_correction_[1] = msg->pose.position.y
+  got_hector_lat_correction_ = true;
+  ROS_INFO_ONCE("[Odometry]: Getting hector lateral corrections");
 
 /*//}*/
-
-   
 
 }
 //}
@@ -929,6 +961,12 @@ void Odometry2::updateEstimators() {
     }
 
     hector_hdg_estimator_->doPrediction(0, dt);
+
+    if (got_hector_lat_correction_) {
+      hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR);
+    }
+
+    hector_lat_estimator_->doPrediction(0, dt);
 
     /*//}*/
 

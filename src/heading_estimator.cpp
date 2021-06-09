@@ -1,6 +1,6 @@
 #include "HeadingEstimator.h"
 
-namespace mrs_uav_odometry
+namespace odometry2
 {
 
 /*  //{ HeadingEstimator() */
@@ -8,18 +8,12 @@ namespace mrs_uav_odometry
 // clang-format off
 HeadingEstimator::HeadingEstimator(
     const std::string &estimator_name,
-    const std::vector<bool> &fusing_measurement,
-    const std::vector<hdg_H_t> &H_multi,
     const hdg_Q_t &Q,
-    const std::vector<hdg_R_t> &R_multi,
-    const bool use_repredictor)
+    const std::vector<hdg_R_t> &R_multi)
     :
     m_estimator_name(estimator_name),
-    m_fusing_measurement(fusing_measurement),
-    m_H_multi(H_multi),
     m_Q(Q),
-    m_R_multi(R_multi),
-    m_use_repredictor(use_repredictor)
+    m_R_multi(R_multi)
   {
 
   // clang-format on
@@ -28,7 +22,12 @@ HeadingEstimator::HeadingEstimator(
   m_n_states = m_A.rows();
 
   // Number of measurement types
-  m_n_measurement_types = m_fusing_measurement.size();
+  m_n_measurement_types = 2;
+
+  alt_H_t pos_H, vel_H, acc_H;
+  pos_H << 1, 0, 0;
+  vel_H << 0, 1, 0;
+  m_H_multi = {pos_H, vel_H};
 
   /*  //{ sanity checks */
 
@@ -104,37 +103,11 @@ HeadingEstimator::HeadingEstimator(
   const hdg_u_t   u0 = hdg_u_t::Zero();
   const ros::Time t0 = ros::Time(0);
 
-  if (m_use_repredictor) {
-    std::cout << "[HeadingEstimator]: Using repredictor in " << m_estimator_name.c_str() << " estimator." << std::endl;
-    // Lambda functions generating A and B matrices based on dt
-    auto generateA = [](const double dt) {
-      var_hdg_A_t A;
-      A << 1, dt, dt * dt / 2, 0, 1 - HDG_INPUT_COEFF, dt, 0, 0, 1;
-      return A;
-    };
-    auto generateB = []([[maybe_unused]] const double dt) {
-      var_hdg_B_t B;
-      B << 0, 0, 0, HDG_INPUT_COEFF, 0, 0;
-      return B;
-    };
-    // Initialize separate LKF models for each H matrix
-    for (size_t i = 0; i < m_H_multi.size(); i++) {
-      mp_lkf_vector.push_back(std::make_shared<var_lkf_hdg_t>(generateA, generateB, m_H_multi[i]));
-    }
-    // Initialize repredictor
-    mp_rep = std::make_unique<rep_hdg_t>(x0, P0, u0, Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-  } else {
     // Initialize a single LKF
     mp_lkf = std::make_unique<lkf_hdg_t>(m_A, m_B, m_H_zero);
-  }
 
   std::cout << "[HeadingEstimator]: New HeadingEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
-
-  std::cout << " fusing measurements: " << std::endl;
-  for (size_t i = 0; i < m_fusing_measurement.size(); i++) {
-    std::cout << m_fusing_measurement[i] << " ";
-  }
 
   std::cout << std::endl << " H_multi: " << std::endl;
   for (size_t i = 0; i < m_H_multi.size(); i++) {
@@ -153,7 +126,7 @@ HeadingEstimator::HeadingEstimator(
 
 /*  //{ doPrediction() */
 
-bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt, const ros::Time &input_stamp, const ros::Time &predict_stamp) {
+bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
 
   /*  //{ sanity checks */
 
@@ -204,13 +177,8 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt, const ros::
 
     try {
       // Apply the prediction step
-      if (m_use_repredictor) {
-        mp_rep->addInputChangeWithNoise(input, m_Q, input_stamp, mp_lkf_vector[0]);
-        m_sc = mp_rep->predictTo(predict_stamp);
-      } else {
         mp_lkf->A = A;
         m_sc      = mp_lkf->predict(m_sc, input, m_Q, dt);
-      }
       /* mp_lkf->B = B; */
     }
     catch (const std::exception &e) {
@@ -225,16 +193,16 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt, const ros::
 
 /*  //{ doPrediction() */
 
-bool HeadingEstimator::doPrediction(const hdg_u_t &input, const ros::Time &input_stamp, const ros::Time &predict_stamp) {
+bool HeadingEstimator::doPrediction(const hdg_u_t &input) {
 
-  return doPrediction(input, m_dt, input_stamp, predict_stamp);
+  return doPrediction(input, m_dt);
 }
 
 //}
 
 /*  //{ doCorrection() */
 
-bool HeadingEstimator::doCorrection(const double measurement, int measurement_type, const ros::Time &meas_stamp, const ros::Time &predict_stamp) {
+bool HeadingEstimator::doCorrection(const double measurement, int measurement_type) {
 
   /*  //{ sanity checks */
 
@@ -254,18 +222,6 @@ bool HeadingEstimator::doCorrection(const double measurement, int measurement_ty
     return false;
   }
 
-  // Check for valid value of measurement
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doCorrection(const double &measurement=" << measurement
-              << ", int measurement_type=" << measurement_type << "): invalid value of \"measurement_type\"." << std::endl;
-    return false;
-  }
-
-  // Check whether the measurement type is fused by this estimator
-  if (!m_fusing_measurement[measurement_type]) {
-    return false;
-  }
-
   //}
 
   // Prepare the measurement vector
@@ -280,13 +236,8 @@ bool HeadingEstimator::doCorrection(const double measurement, int measurement_ty
   {
 
     try {
-      if (m_use_repredictor) {
-        mp_rep->addMeasurement(z, R, meas_stamp, mp_lkf_vector[measurement_type]);
-        m_sc = mp_rep->predictTo(predict_stamp);
-      } else {
         mp_lkf->H = m_H_multi[measurement_type];
         m_sc      = mp_lkf->correct(m_sc, z, R);
-      }
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -398,12 +349,6 @@ bool HeadingEstimator::setState(int state_id, const double state) {
     std::scoped_lock lock(mutex_lkf);
 
     m_sc.x(state_id) = state;
-    // reset repredictor
-    if (m_use_repredictor) {
-      const var_hdg_u_t u0 = hdg_u_t::Zero();
-      const ros::Time   t0 = ros::Time(0);
-      mp_rep               = std::make_unique<rep_hdg_t>(m_sc.x, m_sc.P, u0, m_Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-    }
   }
 
   return true;
@@ -431,13 +376,6 @@ bool HeadingEstimator::setR(double cov, int measurement_type) {
   if (cov <= 0) {
     std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
               << "): \"cov\" should be > 0." << std::endl;
-    return false;
-  }
-
-  // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".setCovariance(double cov=" << cov << ", int measurement_type=" << measurement_type
-              << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
 
@@ -472,13 +410,6 @@ bool HeadingEstimator::getR(double &cov, int measurement_type) {
   if (!std::isfinite(measurement_type)) {
     std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
               << "): NaN detected in variable \"measurement_type\"." << std::endl;
-    return false;
-  }
-
-  // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
-              << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
 
@@ -549,12 +480,6 @@ bool HeadingEstimator::setCovariance(const hdg_P_t &cov) {
     std::scoped_lock lock(mutex_lkf);
 
     m_sc.P = cov;
-    // reset repredictor
-    if (m_use_repredictor) {
-      const var_hdg_u_t u0 = hdg_u_t::Zero();
-      const ros::Time   t0 = ros::Time(0);
-      mp_rep               = std::make_unique<rep_hdg_t>(m_sc.x, m_sc.P, u0, m_Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-    }
   }
 
   return true;
@@ -599,11 +524,6 @@ bool HeadingEstimator::reset(const hdg_x_t &states) {
     std::scoped_lock lock(mutex_lkf);
 
     m_sc.x = (states.col(0));
-    if (m_use_repredictor) {
-      const var_hdg_u_t u0 = hdg_u_t::Zero();
-      const ros::Time   t0 = ros::Time(0);
-      mp_rep               = std::make_unique<rep_hdg_t>(m_sc.x, m_sc.P, u0, m_Q, t0, mp_lkf_vector.at(0), m_buf_sz);
-    }
   }
 
   return true;
@@ -611,4 +531,4 @@ bool HeadingEstimator::reset(const hdg_x_t &states) {
 
 //}
 
-}  // namespace mrs_uav_odometry
+}  // namespace odometry2

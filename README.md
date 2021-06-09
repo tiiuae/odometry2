@@ -12,8 +12,11 @@
 ## Estimation notes
 
 * Fuse baro directly or z position from pixhawk odom local?
+* Publishing odometry and tfs only from active estimator?
+ 
 * [ ] getHeading 
 * [ ] getHeadingRate
+* [ ] control inputs in predictions?
 
 
 

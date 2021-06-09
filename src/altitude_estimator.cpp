@@ -37,7 +37,7 @@ AltitudeEstimator::AltitudeEstimator(
   alt_H_t pos_H, vel_H, acc_H;
   pos_H << 1, 0, 0;
   vel_H << 0, 1, 0;
-  m_H_multi = {pos_h, vel_h};
+  m_H_multi = {pos_H, vel_H};
 
   /*  //{ sanity checks */
 
@@ -99,10 +99,6 @@ AltitudeEstimator::AltitudeEstimator(
 
   std::cout << "[AltitudeEstimator]: New AltitudeEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
-  std::cout << " fusing measurements: " << std::endl;
-  for (size_t i = 0; i < m_fusing_measurement.size(); i++) {
-    std::cout << m_fusing_measurement[i] << " ";
-  }
 
   std::cout << std::endl << " A: " << std::endl << m_A << std::endl << " B: " << std::endl << m_B << std::endl << " Q: " << std::endl << m_Q << std::endl;
 
@@ -409,13 +405,6 @@ bool AltitudeEstimator::setR(double R, int measurement_type) {
     return false;
   }
 
-  // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[AltitudeEstimator]: " << m_estimator_name << ".setcovariance(double R=" << R << ", int measurement_type=" << measurement_type
-              << "): invalid value of \"measurement_type\"." << std::endl;
-    return false;
-  }
-
   //}
 
   double old_R = m_R_multi[measurement_type](0, 0);
@@ -447,13 +436,6 @@ bool AltitudeEstimator::getR(double &R, int measurement_type) {
   if (!std::isfinite(measurement_type)) {
     std::cerr << "[AltitudeEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
               << "): NaN detected in variable \"measurement_type\"." << std::endl;
-    return false;
-  }
-
-  // Check for invalid measurement type
-  if (measurement_type > (int)m_fusing_measurement.size() || measurement_type < 0) {
-    std::cerr << "[AltitudeEstimator]: " << m_estimator_name << ".getCovariance(int measurement_type=" << measurement_type
-              << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
 
