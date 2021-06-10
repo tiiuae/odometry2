@@ -1,3 +1,50 @@
 param_namespace:
   odometry_source: "GPS"
   odometry_loop_rate: 100.0 # [Hz]
+
+# altitude estimation # #{
+  altitude:
+
+    gate: # values outside of this range are not fused [meters]
+      garmin:
+        min: 0.05
+        max: 20.0
+
+    excessive_tilt: 0.785398 # corrections from range sensors will not be fused if UAV is tilted more than this value [radians] (TODO: not used now)
+
+    measurement_covariance: # the covariance used when this measurement is used as correction in Kalman filter
+      garmin: 100.0
+      baro: 100.0
+
+    process_covariance: # the process covariance used in the prediction step of the Kalman filter
+      pos: 100.0
+      vel: 100000.0
+      acc: 100000.0
+# # #}
+
+# heading estimation# #{
+  heading:
+
+    measurement_covariance: # the covariance used when this measurement is used as correction in Kalman filter
+      hector: 0.01
+      gyro: 0.1
+
+    process_covariance: # the process covariance used in the prediction step of the Kalman filter
+      pos: 0.1
+      vel: 0.1
+      acc: 0.001
+
+
+# # #}
+
+# lateral estimation # #{
+  lateral:
+
+    measurement_covariance: # the covariance used when this measurement is used as correction in Kalman filter
+      hector: 1.0
+
+    process_covariance: # the process covariance used in the prediction step of the Kalman filter
+      pos: 0.001
+      vel: 0.01
+      acc: 0.01
+# # #}

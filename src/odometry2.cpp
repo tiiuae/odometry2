@@ -116,6 +116,9 @@ private:
   std::vector<alt_R_t> R_alt_vec_;
 
   std::unique_ptr<MedianFilter> alt_mf_garmin_;
+  double _garmin_min_valid_alt_;
+  double _garmin_max_valid_alt_;
+  double _excessive_tilt_sq_;
   std::atomic<double> garmin_alt_correction_;
   std::atomic_bool got_garmin_alt_correction_ = false;
 
@@ -178,6 +181,7 @@ private:
 
   // internal functions
   bool        isValidType(const fog_msgs::msg::EstimatorType &type);
+  bool isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name);
   bool        changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desired_estimator);
   void        setupEstimator(const std::string &type);
   std::string printOdometryDiag();
@@ -219,7 +223,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   }
   RCLCPP_INFO(this->get_logger(), "[%s]: UAV name is: '%s'", this->get_name(), uav_name_.c_str());
 
-  /* parse params from config file //{ */
+  /* parse general params from config file //{ */
 
   bool callbacks_enabled_ = false;
   parse_param("odometry_source", _estimator_source_param_);
@@ -247,35 +251,37 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   max_valid = 1000.0;
 
   // Garmin
-  param_loader.loadParam("altitude/median_filter/garmin/buffer_size", buffer_size);
-  param_loader.loadParam("altitude/median_filter/garmin/max_diff", max_diff);
+  parse_param("altitude.median_filter.garmin.buffer_size", buffer_size);
+  parse_param("altitude.median_filter.garmin.max_diff", max_diff);
   alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff);
 
   //}
 
   /* altitude measurement min and max value gates //{ */
 
-  param_loader.loadParam("altitude/gate/garmin/min", _garmin_min_valid_alt_);
-  param_loader.loadParam("altitude/gate/garmin/max", _garmin_max_valid_alt_);
+  parse_param("altitude.gate.garmin.min", _garmin_min_valid_alt_);
+  parse_param("altitude.gate.garmin.max", _garmin_max_valid_alt_);
 
   //}
 
   /* excessive tilt //{ */
 
+/* TODO: not used yet */
   double excessive_tilt_tmp;
-  param_loader.loadParam("altitude/excessive_tilt", excessive_tilt_tmp);
+  parse_param("altitude.excessive_tilt", excessive_tilt_tmp);
   _excessive_tilt_sq_ = std::pow(excessive_tilt_tmp, 2);
 
   //}
 
   /* altitude measurement covariances (R matrices) //{ */
 
-    alt_R_t temp_matrix, R_alt;
-    param_loader.loadMatrixStatic("altitude/R/garmin" temp_matrix);
-    R_alt = R_alt.Identity() * temp_matrix(0);
+    alt_R_t R_alt;
+    double R_tmp;
+    parse_param("altitude.measurement_covariance.garmin", R_tmp);
+    R_alt = R_alt.Identity() * R_tmp;
     R_alt_vec_.push_back(R_alt);
-    param_loader.loadMatrixStatic("altitude/R/baro" temp_matrix);
-    R_alt = R_alt.Identity() * temp_matrix(0);
+    parse_param("altitude.measurement_covariance.baro", R_tmp);
+    R_alt = R_alt.Identity() * R_tmp;
     R_alt_vec_.push_back(R_alt);
 
   //}
@@ -283,7 +289,13 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /* altitude process covariance (Q matrix) //{ */
 
   alt_Q_t Q_alt;
-  param_loader.loadMatrixStatic("altitude/Q", Q_alt);
+  double alt_pos, alt_vel, alt_acc;
+  parse_param("altitude.process_covariance.pos", alt_pos);
+  parse_param("altitude.process_covariance.vel", alt_vel);
+  parse_param("altitude.process_covariance.acc", alt_acc);
+  alt_x_t alt_Q_vec_tmp << alt_pos, alt_vel, alt_acc;
+  Q_alt = Q_alt.Identity() * alt_Q_vec_tmp;
+
 
   //}
 
@@ -296,12 +308,13 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* heading measurement covariances (R matrices) //{ */
 
-    hdg_R_t temp_matrix, R_hdg;
-    param_loader.loadMatrixStatic("heading/R/hector" temp_matrix);
-    R_hdg = R_hdg.Identity() * temp_matrix(0);
+    hdg_R_t R_hdg;
+    double R_tmp;
+    parse_param("heading.R.hector", R_tmp);
+    R_hdg = R_hdg.Identity() * R_tmp;
     R_hdg_vec_.push_back(R_hdg);
-    param_loader.loadMatrixStatic("heading/R/gyro" temp_matrix);
-    R_hdg = R_hdg.Identity() * temp_matrix(0);
+    parse_param("heading.R.gyro" R_tmp);
+    R_hdg = R_hdg.Identity() * R_tmp;
     R_hdg_vec_.push_back(R_hdg);
 
   //}
@@ -309,7 +322,13 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /* heading process covariance (Q matrix) //{ */
 
   hdg_Q_t Q_hdg;
-  param_loader.loadMatrixStatic("heading/Q", Q_hdg);
+  param_loader.loadMatrixStatic("heading.Q", Q_hdg);
+  double hdg_pos, hdg_vel, hdg_acc;
+  parse_param("heading.process_covariance.pos", hdg_pos);
+  parse_param("heading.process_covariance.vel", hdg_vel);
+  parse_param("heading.process_covariance.acc", hdg_acc);
+  hdg_x_t hdg_Q_vec_tmp << hdg_pos, hdg_vel, hdg_acc;
+  Q_hdg = Q_hdg.Identity() * hdg_Q_vec_tmp;
 
   //}
 
@@ -323,9 +342,10 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* lateral measurement covariances (R matrices) //{ */
 
-  lat_R_t temp_matrix, R_lat;
-  param_loader.loadMatrixStatic("lateral/R/hector" temp_matrix);
-  R_lat = R_lat.Identity() * temp_matrix(0);
+  lat_R_t R_lat;
+  double R_lat_tmp;
+  parse_params("lateral.measurement_covariance.hector", R_lat_tmp);
+  R_lat = R_lat.Identity() * R_lat_tmp;
   R_lat_vec_.push_back(R_lat);
 
   //}
@@ -333,7 +353,12 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /* lateral process covariance (Q matrix) //{ */
 
   lat_Q_t Q_lat;
-  param_loader.loadMatrixStatic("lateral/Q", Q_lat);
+  double lat_pos, lat_vel, lat_acc;
+  parse_param("lateral.process_covariance.pos", lat_pos);
+  parse_param("lateral.process_covariance.vel", lat_vel);
+  parse_param("lateral.process_covariance.acc", lat_acc);
+  lat_x_t lat_Q_vec_tmp << lat_pos, lat_vel, lat_acc;
+  Q_lat = Q_lat.Identity() * lat_Q_vec_tmp;
 
   //}
   
@@ -644,6 +669,10 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
     return;
   }
 
+  if (!isValidGate(measurement, _garmin_min_valid_alt_, _garmin_max_valid_alt_, "garmin range")) {
+    return;
+  }
+
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
   if (isUavFlying()) {
     if (!alt_mf_garmin_->isValid(measurement)) {
@@ -852,6 +881,29 @@ bool Odometry2::isValidType(const fog_msgs::msg::EstimatorType &type) {
 }
 
 //}
+
+/*isValidGate() //{*/
+bool Odometry2::isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name) {
+
+  // Min value check
+  if (value < min_value) {
+    if (value_name != "") {
+      ROS_WARN_THROTTLE(1.0, "[Odometry2]: %s value %f < %f is not valid.", value_name.c_str(), value, min_value);
+    }
+    return false;
+  }
+
+  // Max value check
+  if (value > max_value) {
+    if (value_name != "") {
+      ROS_WARN_THROTTLE(1.0, "[Odometry2]: %s value %f > %f is not valid.", value_name.c_str(), value, max_value);
+    }
+    return false;
+  }
+
+  return true;
+}
+/*//}*/
 
 /* //{ changeCurrentEstimator */
 bool Odometry2::changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desired_estimator) {
