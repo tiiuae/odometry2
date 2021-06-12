@@ -13,10 +13,13 @@
 
 * Fuse baro directly or z position from pixhawk odom local?
 * Publishing odometry and tfs only from active estimator?
+  * The answer is yes
+* How to load matrices?
  
 * [ ] getHeading 
 * [ ] getHeadingRate
 * [ ] control inputs in predictions?
+* [ ] Do not fuse garmin when tilt too large
 
 
 
