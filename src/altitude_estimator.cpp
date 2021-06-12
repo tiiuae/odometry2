@@ -90,9 +90,9 @@ AltitudeEstimator::AltitudeEstimator(
   alt_P_t              P_tmp = alt_P_t::Identity();
   const alt_P_t        P0    = 1000.0 * P_tmp * P_tmp.transpose();
   const alt_statecov_t sc0({x0, P0});
-  m_sc                 = sc0;
-  const alt_u_t u0 = alt_u_t::Zero();
-  const rclcpp::Time   t0 = rclcpp::Time(0);
+  m_sc                  = sc0;
+  const alt_u_t      u0 = alt_u_t::Zero();
+  const rclcpp::Time t0 = rclcpp::Time(0);
 
   // Initialize a single LKF
   mp_lkf = std::make_unique<lkf_alt_t>(m_A, m_B, m_H_zero);
@@ -164,8 +164,8 @@ bool AltitudeEstimator::doPrediction(const double input, const double dt) {
 
     try {
       // Apply the prediction step
-        mp_lkf->A = A;
-        m_sc      = mp_lkf->predict(m_sc, u, m_Q, dt);
+      mp_lkf->A = A;
+      m_sc      = mp_lkf->predict(m_sc, u, m_Q, dt);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -610,7 +610,7 @@ bool AltitudeEstimator::setCovariance(const alt_P_t &P) {
   for (int i = 0; i < m_n_states; i++) {
     if (!std::isfinite(P(i, i))) {
       std::cerr << "[AltitudeEstimator]: " << m_estimator_name << ".setCovariance(const Eigen::MatrixXd &P=" << P << "): NaN detected in variable \"P(" << i
-                                               << "," << i << ")\".";
+                << "," << i << ")\".";
       return false;
     }
   }
@@ -660,4 +660,4 @@ bool AltitudeEstimator::reset(const alt_x_t &x) {
 }
 
 //}
-}  // namespace odoemtry2
+}  // namespace odometry2

@@ -99,12 +99,12 @@ HeadingEstimator::HeadingEstimator(
   hdg_P_t              P_tmp = hdg_P_t::Identity();
   const hdg_P_t        P0    = 1000.0 * P_tmp * P_tmp.transpose();
   const hdg_statecov_t sc0({x0, P0});
-  m_sc               = sc0;
-  const hdg_u_t   u0 = hdg_u_t::Zero();
+  m_sc                  = sc0;
+  const hdg_u_t      u0 = hdg_u_t::Zero();
   const rclcpp::Time t0 = rclcpp::Time(0);
 
-    // Initialize a single LKF
-    mp_lkf = std::make_unique<lkf_hdg_t>(m_A, m_B, m_H_zero);
+  // Initialize a single LKF
+  mp_lkf = std::make_unique<lkf_hdg_t>(m_A, m_B, m_H_zero);
 
   std::cout << "[HeadingEstimator]: New HeadingEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
@@ -135,11 +135,11 @@ bool HeadingEstimator::doPrediction(const double input, double dt) {
 
 
   // Check for NaNs
-    if (!std::isfinite(input)) {
-      std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const double input=" << input << ", double dt=" << dt
-                << "): NaN detected in variable \"input(0)\"." << std::endl;
-      return false;
-    }
+  if (!std::isfinite(input)) {
+    std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const double input=" << input << ", double dt=" << dt
+              << "): NaN detected in variable \"input(0)\"." << std::endl;
+    return false;
+  }
 
   if (!std::isfinite(dt)) {
     std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
@@ -178,9 +178,9 @@ bool HeadingEstimator::doPrediction(const double input, double dt) {
 
     try {
       // Apply the prediction step
-         
-        mp_lkf->A = A;
-        m_sc      = mp_lkf->predict(m_sc, u, m_Q, dt);
+
+      mp_lkf->A = A;
+      m_sc      = mp_lkf->predict(m_sc, u, m_Q, dt);
       /* mp_lkf->B = B; */
     }
     catch (const std::exception &e) {
@@ -238,12 +238,12 @@ bool HeadingEstimator::doCorrection(const double measurement, int measurement_ty
   {
 
     try {
-        mp_lkf->H = m_H_multi[measurement_type];
-        m_sc      = mp_lkf->correct(m_sc, z, R);
+      mp_lkf->H = m_H_multi[measurement_type];
+      m_sc      = mp_lkf->correct(m_sc, z, R);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      std::cerr << "[HeadingEstimator]: LKF correction step failed: " <<  e.what();
+      std::cerr << "[HeadingEstimator]: LKF correction step failed: " << e.what();
     }
   }
 

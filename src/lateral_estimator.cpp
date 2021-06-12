@@ -84,12 +84,12 @@ LateralEstimator::LateralEstimator(
   lat_P_t              P_tmp = lat_P_t::Identity();
   const lat_P_t        P0    = 1000.0 * P_tmp;
   const lat_statecov_t sc0({x0, P0});
-  m_sc               = sc0;
-  const lat_u_t       u0 = lat_u_t::Zero();
+  m_sc                  = sc0;
+  const lat_u_t      u0 = lat_u_t::Zero();
   const rclcpp::Time t0 = rclcpp::Time(0);
 
-    // Initialize a single LKF
-    mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H_zero);
+  // Initialize a single LKF
+  mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H_zero);
 
   std::cout << "[LateralEstimator]: New LateralEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
@@ -148,19 +148,19 @@ bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
   u << x, y;
 
   LatMat newA = m_A;
-  newA(0, 2)           = dt;
-  newA(1, 3)           = dt;
-  newA(2, 4)           = dt;
-  newA(3, 5)           = dt;
-  newA(0, 4)           = std::pow(dt,2);
-  newA(1, 5)           = std::pow(dt,2);
+  newA(0, 2)  = dt;
+  newA(1, 3)  = dt;
+  newA(2, 4)  = dt;
+  newA(3, 5)  = dt;
+  newA(0, 4)  = std::pow(dt, 2);
+  newA(1, 5)  = std::pow(dt, 2);
 
   {
     std::scoped_lock lock(mutex_lkf);
 
     try {
       // Apply the prediction step
-        m_sc = mp_lkf->predict(m_sc, u, m_Q, dt);
+      m_sc = mp_lkf->predict(m_sc, u, m_Q, dt);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -190,27 +190,27 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
 
   // Check for NaNs
   if (!std::isfinite(x)) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
-              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"x\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x << ", int measurement_type=" << measurement_type
+              << "): NaN detected in variable \"x\"." << std::endl;
     return false;
   }
 
   if (!std::isfinite(y)) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double y=" << y
-              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement(0)\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double y=" << y << ", int measurement_type=" << measurement_type
+              << "): NaN detected in variable \"measurement(0)\"." << std::endl;
     return false;
   }
 
   if (!std::isfinite(measurement_type)) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
-              << ", int measurement_type=" << measurement_type << "): NaN detected in variable \"measurement_type\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x << ", int measurement_type=" << measurement_type
+              << "): NaN detected in variable \"measurement_type\"." << std::endl;
     return false;
   }
 
   // Check for valid value of measurement
   if (measurement_type < 0) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x
-              << ", int measurement_type=" << measurement_type << "): invalid value of \"measurement_type\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doCorrection(const double x=" << x << ", int measurement_type=" << measurement_type
+              << "): invalid value of \"measurement_type\"." << std::endl;
     return false;
   }
 
@@ -225,7 +225,7 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
     std::scoped_lock lock(mutex_lkf);
 
     try {
-        m_sc = mp_lkf->correct(m_sc, z, R);
+      m_sc = mp_lkf->correct(m_sc, z, R);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -276,7 +276,8 @@ bool LateralEstimator::getState(int state_id, double &state) {
 
   // Check for NaNs
   if (!std::isfinite(state_id)) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): NaN detected in variable \"state_id\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".getState(int state_id=" << state_id << "): NaN detected in variable \"state_id\"."
+              << std::endl;
     return false;
   }
 
@@ -573,7 +574,6 @@ bool LateralEstimator::reset(const lat_x_t &states) {
     std::scoped_lock lock(mutex_lkf);
 
     m_sc.x = states;
-
   }
 
   return true;

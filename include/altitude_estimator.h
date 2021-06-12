@@ -34,8 +34,7 @@ class AltitudeEstimator {
 
 public:
   AltitudeEstimator();
-  AltitudeEstimator(const std::string &estimator_name, const alt_Q_t &Q,
-                    const std::vector<alt_R_t> &R_multi);
+  AltitudeEstimator(const std::string &estimator_name, const alt_Q_t &Q, const std::vector<alt_R_t> &R_multi);
 
   virtual bool doPrediction(const double input, const double dt);
   virtual bool doPrediction(const double input);
@@ -55,9 +54,9 @@ public:
   virtual bool        reset(const alt_x_t &states);
 
 private:
-  std::string       m_estimator_name;
-  int               m_n_states;
-  size_t            m_n_measurement_types;
+  std::string m_estimator_name;
+  int         m_n_states;
+  size_t      m_n_measurement_types;
 
   // State transition matrix
   alt_A_t m_A;
@@ -76,7 +75,7 @@ private:
 
   // Array with covariances of each fused measurement
   std::vector<alt_R_t> m_R_multi;
-  
+
   // Default dt
   double m_dt    = ALT_DT;
   double m_dt_sq = m_dt * m_dt / 2;

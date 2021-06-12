@@ -32,14 +32,13 @@ using lat_H_t        = lkf_lat_t::H_t;
 class LateralEstimator {
 
 public:
-  LateralEstimator(const std::string &estimator_name, const lat_Q_t &Q,
-                 const std::vector<lat_R_t> &R_multi);
+  LateralEstimator(const std::string &estimator_name, const lat_Q_t &Q, const std::vector<lat_R_t> &R_multi);
 
 
-  bool doPrediction(const double x, const double y, const double dt);
-  bool doCorrection(const double x, const double y, int measurement_type);
-  bool getStates(lat_x_t &states);
-  bool getState(int state_id, double &state);
+  bool        doPrediction(const double x, const double y, const double dt);
+  bool        doCorrection(const double x, const double y, int measurement_type);
+  bool        getStates(lat_x_t &states);
+  bool        getState(int state_id, double &state);
   std::string getName(void);
   bool        setState(int state_id, const double &state);
   bool        setStates(const lat_x_t &states);
@@ -52,8 +51,8 @@ public:
   bool        reset(const lat_x_t &states);
 
 private:
-  std::string                m_estimator_name;
-  std::vector<bool>          m_fusing_measurement;
+  std::string       m_estimator_name;
+  std::vector<bool> m_fusing_measurement;
 
   // State transition matrix
   lat_A_t m_A;
@@ -66,9 +65,9 @@ private:
 
   std::vector<lat_H_t> m_H_multi;
 
-  lat_Q_t                     m_Q;
+  lat_Q_t m_Q;
 
-  std::vector<lat_R_t>          m_R_multi;
+  std::vector<lat_R_t> m_R_multi;
 
   // Default dt
   double m_dt    = LAT_DT;

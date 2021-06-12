@@ -32,8 +32,7 @@ using hdg_H_t        = lkf_hdg_t::H_t;
 class HeadingEstimator {
 
 public:
-  HeadingEstimator(const std::string &estimator_name, const hdg_Q_t &Q,
-                   const std::vector<hdg_R_t> &R_multi);
+  HeadingEstimator(const std::string &estimator_name, const hdg_Q_t &Q, const std::vector<hdg_R_t> &R_multi);
 
   bool        doPrediction(const double input, double dt);
   bool        doPrediction(const double input);
@@ -49,9 +48,9 @@ public:
   bool        reset(const hdg_x_t &states);
 
 private:
-  std::string       m_estimator_name;
-  int               m_n_states;
-  size_t            m_n_measurement_types;
+  std::string m_estimator_name;
+  int         m_n_states;
+  size_t      m_n_measurement_types;
 
   // State transition matrix
   hdg_A_t m_A;

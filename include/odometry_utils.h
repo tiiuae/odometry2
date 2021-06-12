@@ -40,11 +40,11 @@ double getHeading(const geometry_msgs::msg::Quaternion& q) {
 /*//}*/
 
 /* TODO: IMPLEMENT!!! getAltitudeFromPressure() //{*/
-  double getAltitudeFromPressure(const double pressure, const double temperature) {
-    
-    std::cerr << "getAltitudeFromPressure() is not implemented! Returns 0!" << std::endl;
-    return 0.0;
-  }
+double getAltitudeFromPressure(const double pressure, const double temperature) {
+
+  std::cerr << "getAltitudeFromPressure() is not implemented! Returns 0!" << std::endl;
+  return 0.0;
+}
 /*//}*/
 
 }  // namespace odometry_utils
