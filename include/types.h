@@ -1,6 +1,6 @@
 #pragma once
-#ifndef MRS_UAV_ODOMETRY_TYPES_H
-#define MRS_UAV_ODOMETRY_TYPES_H
+#ifndef ODOMETRY2_TYPES_H
+#define ODOMETRY2_TYPES_H
 
 #include <Eigen/Eigen>
 

@@ -126,7 +126,7 @@ HeadingEstimator::HeadingEstimator(
 
 /*  //{ doPrediction() */
 
-bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
+bool HeadingEstimator::doPrediction(const double input, double dt) {
 
   /*  //{ sanity checks */
 
@@ -135,13 +135,11 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
 
 
   // Check for NaNs
-  for (int i = 0; i < input.size(); i++) {
-    if (!std::isfinite(input(i))) {
-      std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input(i) << ", double dt=" << dt
+    if (!std::isfinite(input)) {
+      std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const double input=" << input << ", double dt=" << dt
                 << "): NaN detected in variable \"input(0)\"." << std::endl;
       return false;
     }
-  }
 
   if (!std::isfinite(dt)) {
     std::cerr << "[HeadingEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
@@ -172,13 +170,17 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
 
   A(0, 2) = dt_sq;
 
+  hdg_u_t u;
+  u << input;
+
   {
     std::scoped_lock lock(mutex_lkf);
 
     try {
       // Apply the prediction step
+         
         mp_lkf->A = A;
-        m_sc      = mp_lkf->predict(m_sc, input, m_Q, dt);
+        m_sc      = mp_lkf->predict(m_sc, u, m_Q, dt);
       /* mp_lkf->B = B; */
     }
     catch (const std::exception &e) {
@@ -193,7 +195,7 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
 
 /*  //{ doPrediction() */
 
-bool HeadingEstimator::doPrediction(const hdg_u_t &input) {
+bool HeadingEstimator::doPrediction(const double input) {
 
   return doPrediction(input, m_dt);
 }

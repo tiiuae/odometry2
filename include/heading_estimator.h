@@ -35,8 +35,8 @@ public:
   HeadingEstimator(const std::string &estimator_name, const hdg_Q_t &Q,
                    const std::vector<hdg_R_t> &R_multi);
 
-  bool        doPrediction(const hdg_u_t &input, double dt);
-  bool        doPrediction(const hdg_u_t &input);
+  bool        doPrediction(const double input, double dt);
+  bool        doPrediction(const double input);
   bool        doCorrection(const double measurement, int measurement_type);
   bool        getStates(hdg_x_t &states);
   bool        getState(int state_id, double &state);
