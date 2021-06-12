@@ -19,17 +19,6 @@
 namespace odometry2
 {
 
-using alt_statecov_t = lkf_alt_t::statecov_t;
-using alt_A_t        = lkf_alt_t::A_t;
-using alt_B_t        = lkf_alt_t::B_t;
-using alt_x_t        = lkf_alt_t::x_t;
-using alt_P_t        = lkf_alt_t::P_t;
-using alt_u_t        = lkf_alt_t::u_t;
-using alt_z_t        = lkf_alt_t::z_t;
-using alt_Q_t        = lkf_alt_t::Q_t;
-using alt_R_t        = lkf_alt_t::R_t;
-using alt_H_t        = lkf_alt_t::H_t;
-
 class AltitudeEstimator {
 
 public:

@@ -49,14 +49,6 @@
 
 /* typedefs //{ */
 
-typedef Eigen::Matrix<double, 1, 1> Mat1;
-typedef Eigen::Matrix<double, 2, 1> Vec2;
-
-typedef Eigen::Matrix<double, LAT_N_STATES, LAT_N_STATES> LatMat;
-typedef Eigen::Matrix<double, LAT_N_STATES, 1>            LatState1D;
-typedef Eigen::Matrix<double, 1, LAT_N_STATES>            LatStateCol1D;
-typedef Eigen::Matrix<double, LAT_N_STATES, 2>            LatState2D;
-
 // lateral
 typedef mrs_lib::LKF<LAT_N_STATES, LAT_M_INPUTS, LAT_P_MEASUREMENTS> lkf_lat_t;
 typedef lkf_lat_t::statecov_t                                        lat_statecov_t;

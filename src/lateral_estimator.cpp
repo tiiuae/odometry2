@@ -147,7 +147,7 @@ bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
   lat_u_t u;
   u << x, y;
 
-  LatMat newA = m_A;
+  lat_A_t newA = m_A;
   newA(0, 2)  = dt;
   newA(1, 3)  = dt;
   newA(2, 4)  = dt;

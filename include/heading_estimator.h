@@ -18,17 +18,6 @@
 namespace odometry2
 {
 
-using hdg_statecov_t = lkf_hdg_t::statecov_t;
-using hdg_A_t        = lkf_hdg_t::A_t;
-using hdg_B_t        = lkf_hdg_t::B_t;
-using hdg_x_t        = lkf_hdg_t::x_t;
-using hdg_P_t        = lkf_hdg_t::P_t;
-using hdg_u_t        = lkf_hdg_t::u_t;
-using hdg_z_t        = lkf_hdg_t::z_t;
-using hdg_Q_t        = lkf_hdg_t::Q_t;
-using hdg_R_t        = lkf_hdg_t::R_t;
-using hdg_H_t        = lkf_hdg_t::H_t;
-
 class HeadingEstimator {
 
 public:

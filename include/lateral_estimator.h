@@ -18,17 +18,6 @@
 namespace odometry2
 {
 
-using lat_statecov_t = lkf_lat_t::statecov_t;
-using lat_A_t        = lkf_lat_t::A_t;
-using lat_B_t        = lkf_lat_t::B_t;
-using lat_x_t        = lkf_lat_t::x_t;
-using lat_P_t        = lkf_lat_t::P_t;
-using lat_u_t        = lkf_lat_t::u_t;
-using lat_z_t        = lkf_lat_t::z_t;
-using lat_Q_t        = lkf_lat_t::Q_t;
-using lat_R_t        = lkf_lat_t::R_t;
-using lat_H_t        = lkf_lat_t::H_t;
-
 class LateralEstimator {
 
 public:
