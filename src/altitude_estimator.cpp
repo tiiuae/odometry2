@@ -23,7 +23,7 @@ AltitudeEstimator::AltitudeEstimator(
     :
     m_estimator_name(estimator_name),
     m_Q(Q),
-    m_R_multi(R_multi),
+    m_R_multi(R_multi)
   {
 
   // clang-format on
@@ -91,8 +91,8 @@ AltitudeEstimator::AltitudeEstimator(
   const alt_P_t        P0    = 1000.0 * P_tmp * P_tmp.transpose();
   const alt_statecov_t sc0({x0, P0});
   m_sc                 = sc0;
-  const var_alt_u_t u0 = alt_u_t::Zero();
-  const ros::Time   t0 = ros::Time(0);
+  const alt_u_t u0 = alt_u_t::Zero();
+  const rclcpp::Time   t0 = rclcpp::Time(0);
 
   // Initialize a single LKF
   mp_lkf = std::make_unique<lkf_alt_t>(m_A, m_B, m_H_zero);
@@ -169,7 +169,7 @@ bool AltitudeEstimator::doPrediction(const double input, const double dt) {
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[AltitudeEstimator]: LKF prediction step failed: %s", e.what());
+      std::cerr << "[AltitudeEstimator]: LKF prediction step failed: " << e.what();
     }
   }
   return true;
@@ -217,7 +217,7 @@ bool AltitudeEstimator::doPrediction(const double input) {
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[AltitudeEstimator]: LKF prediction step failed: %s", e.what());
+      std::cerr << "[AltitudeEstimator]: LKF prediction step failed: " << e.what();
     }
   }
 
@@ -267,7 +267,7 @@ bool AltitudeEstimator::doCorrection(const double &measurement, int measurement_
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[AltitudeEstimator]: LKF correction step failed: %s", e.what());
+      std::cerr << "[AltitudeEstimator]: LKF correction step failed: " << e.what();
     }
   }
 
@@ -609,8 +609,8 @@ bool AltitudeEstimator::setCovariance(const alt_P_t &P) {
   // Check for NaNs
   for (int i = 0; i < m_n_states; i++) {
     if (!std::isfinite(P(i, i))) {
-      ROS_ERROR_STREAM("[AltitudeEstimator]: " << m_estimator_name << ".setCovariance(const Eigen::MatrixXd &P=" << P << "): NaN detected in variable \"P(" << i
-                                               << "," << i << ")\".");
+      std::cerr << "[AltitudeEstimator]: " << m_estimator_name << ".setCovariance(const Eigen::MatrixXd &P=" << P << "): NaN detected in variable \"P(" << i
+                                               << "," << i << ")\".";
       return false;
     }
   }

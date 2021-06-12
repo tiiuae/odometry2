@@ -1,4 +1,4 @@
-#include "HeadingEstimator.h"
+#include "heading_estimator.h"
 
 namespace odometry2
 {
@@ -101,7 +101,7 @@ HeadingEstimator::HeadingEstimator(
   const hdg_statecov_t sc0({x0, P0});
   m_sc               = sc0;
   const hdg_u_t   u0 = hdg_u_t::Zero();
-  const ros::Time t0 = ros::Time(0);
+  const rclcpp::Time t0 = rclcpp::Time(0);
 
     // Initialize a single LKF
     mp_lkf = std::make_unique<lkf_hdg_t>(m_A, m_B, m_H_zero);
@@ -183,7 +183,7 @@ bool HeadingEstimator::doPrediction(const hdg_u_t &input, double dt) {
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[HeadingEstimator]: LKF prediction step failed: %s", e.what());
+      std::cerr << "[HeadingEstimator]: LKF prediction step failed: " << e.what();
     }
   }
   return true;
@@ -241,7 +241,7 @@ bool HeadingEstimator::doCorrection(const double measurement, int measurement_ty
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[HeadingEstimator]: LKF correction step failed: %s", e.what());
+      std::cerr << "[HeadingEstimator]: LKF correction step failed: " <<  e.what();
     }
   }
 

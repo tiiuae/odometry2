@@ -15,7 +15,7 @@
 
 // lateral
 #define LAT_N_STATES 6
-#define LAT_M_INPUTS 1
+#define LAT_M_INPUTS 2
 #define LAT_P_MEASUREMENTS 1
 
 // altitude
@@ -41,6 +41,9 @@
 // heading state corrections
 #define HDG_HECTOR 0
 #define HDG_GYRO 1
+
+// lateral state corrections
+#define LAT_HECTOR 0
 
 /*//}*/
 

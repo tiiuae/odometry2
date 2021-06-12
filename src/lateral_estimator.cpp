@@ -1,4 +1,4 @@
-#include "LateralEstimator.h"
+#include "lateral_estimator.h"
 
 namespace odometry2
 {
@@ -8,8 +8,8 @@ namespace odometry2
 // clang-format off
 LateralEstimator::LateralEstimator(
     const std::string &estimator_name,
-    const Q_t &Q,
-    const std::vector<R_t> &R_multi)
+    const lat_Q_t &Q,
+    const std::vector<lat_R_t> &R_multi)
     :
     m_estimator_name(estimator_name),
     m_Q(Q),
@@ -24,7 +24,7 @@ LateralEstimator::LateralEstimator(
   // Number of measurement types
   m_n_measurement_types = 1;
 
-  alt_H_t pos_H, vel_H, acc_H;
+  lat_H_t pos_H, vel_H, acc_H;
   pos_H << 1, 0, 0;
   m_H_multi = {pos_H};
 
@@ -63,17 +63,33 @@ LateralEstimator::LateralEstimator(
 
   //}
 
+  // clang-format off
+  m_A << 1, 0, m_dt, 0, m_dt_sq, 0,
+         0, 1, 0, m_dt, 0, m_dt_sq,
+         0, 0, 1, 0, m_dt, 0,
+         0, 0, 0, 1, 0, m_dt,
+         0, 0, 0, 0, 1-m_b, 0,
+         0, 0, 0, 0, 0, 1-m_b;
+
+  m_B << 0, 0, 0, 0, m_b, 0,
+         0, 0, 0, 0, 0, m_b;
+
+  // clang-format on
+
+  // set measurement mapping matrix H to zero, it will be set later during each correction step
+  lat_H_t m_H_zero = m_H_zero.Zero();
+
   // Initialize all states to 0
-  const x_t        x0    = x_t::Zero();
-  P_t              P_tmp = P_t::Identity();
-  const P_t        P0    = 1000.0 * P_tmp;
-  const statecov_t sc0({x0, P0});
-  sc_               = sc0;
-  const u_t       u0 = u_t::Zero();
-  const ros::Time t0 = ros::Time(0);
+  const lat_x_t        x0    = lat_x_t::Zero();
+  lat_P_t              P_tmp = lat_P_t::Identity();
+  const lat_P_t        P0    = 1000.0 * P_tmp;
+  const lat_statecov_t sc0({x0, P0});
+  m_sc               = sc0;
+  const lat_u_t       u0 = lat_u_t::Zero();
+  const rclcpp::Time t0 = rclcpp::Time(0);
 
     // Initialize a single LKF
-    mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H);
+    mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H_zero);
 
   std::cout << "[LateralEstimator]: New LateralEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
@@ -82,9 +98,9 @@ LateralEstimator::LateralEstimator(
   for (size_t i = 0; i < m_R_multi.size(); i++) {
     std::cout << m_R_multi[i] << std::endl;
   }
-  std::cout << std::endl << " H_arr: " << std::endl;
-  for (size_t i = 0; i < m_H.size(); i++) {
-    std::cout << m_H[i] << std::endl;
+  std::cout << std::endl << " H_multi: " << std::endl;
+  for (size_t i = 0; i < m_H_multi.size(); i++) {
+    std::cout << m_H_multi[i] << std::endl;
   }
   std::cout << std::endl << " Q: " << std::endl << m_Q << std::endl;
 
@@ -102,13 +118,6 @@ bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
   if (!m_is_initialized)
     return false;
 
-  // Check size of input
-  if (input.size() != 2) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
-              << "): wrong size of \"input\". Should be: " << 2 << " is:" << input.size() << std::endl;
-    return false;
-  }
-
   // Check for NaNs
   if (!std::isfinite(x)) {
     std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const double &x=" << x << ", double dt=" << dt
@@ -123,45 +132,39 @@ bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
   }
 
   if (!std::isfinite(dt)) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
-              << "): NaN detected in variable \"dt\"." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(): NaN detected in variable \"dt\"." << std::endl;
     return false;
   }
 
   // Check for non-positive dt
   if (dt <= 0) {
-    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(const Eigen::VectorXd &input=" << input << ", double dt=" << dt
-              << "): \"dt\" should be > 0." << std::endl;
+    std::cerr << "[LateralEstimator]: " << m_estimator_name << ".doPrediction(): \"dt\" should be > 0." << std::endl;
     return false;
   }
 
   //}
 
-  /* std::cout << "[LateralEstimator]: " << m_estimator_name << " fusing input: " << input << " with time step: " << dt << std::endl; */
+  lat_u_t u;
+  u << x, y;
 
-  u_t u << x, y;
-
-  /* LatMat newA = m_A; */
-  /* newA(0, 1)           = dt; */
-  /* newA(1, 2)           = dt; */
-  /* newA(1, 3)           = std::pow(dt,2); */
+  LatMat newA = m_A;
+  newA(0, 2)           = dt;
+  newA(1, 3)           = dt;
+  newA(2, 4)           = dt;
+  newA(3, 5)           = dt;
+  newA(0, 4)           = std::pow(dt,2);
+  newA(1, 5)           = std::pow(dt,2);
 
   {
     std::scoped_lock lock(mutex_lkf);
 
-    /* mp_lkf_x->setA(newA); */
-    /* mp_lkf_x->setInput(input_vec_x); */
-    /* mp_lkf_x->iterateWithoutCorrection(); */
-    /* mp_lkf_y->setA(newA); */
-    /* mp_lkf_y->setInput(input_vec_y); */
-    /* mp_lkf_y->iterateWithoutCorrection(); */
     try {
       // Apply the prediction step
         m_sc = mp_lkf->predict(m_sc, u, m_Q, dt);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[Odometry]: LKF prediction step failed: %s", e.what());
+      std::cerr << "[Odometry]: LKF prediction step failed: " << e.what();
     }
   }
 
@@ -213,25 +216,20 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
 
   //}
 
-  z_t z << x, y;
+  lat_z_t z;
+  z << x, y;
+  lat_R_t R;
   R << m_R_multi[measurement_type];
 
   {
     std::scoped_lock lock(mutex_lkf);
 
-    /* mp_lkf_x->setP(m_P_arr[measurement_type]); */
-    /* mp_lkf_x->setMeasurement(mes_vec_x, m_R_multi[measurement_type]); */
-    /* mp_lkf_x->doCorrection(); */
-    /* mp_lkf_y->setP(m_P_arr[measurement_type]); */
-    /* mp_lkf_y->setMeasurement(mes_vec_y, m_R_multi[measurement_type]); */
-    /* mp_lkf_y->doCorrection(); */
-
     try {
-        m_sc = mp_lkf->correct(m_sc, z, R, measurement_type);
+        m_sc = mp_lkf->correct(m_sc, z, R);
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      ROS_ERROR("[Odometry]: LKF correction step failed: %s", e.what());
+      std::cerr << "[Odometry]: LKF correction step failed: " << e.what();
     }
   }
 
@@ -249,7 +247,7 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
 
 /*  //{ getStates() */
 
-bool LateralEstimator::getStates(x_t &states) {
+bool LateralEstimator::getStates(lat_x_t &states) {
 
   /*  //{ sanity checks */
 
@@ -260,7 +258,7 @@ bool LateralEstimator::getStates(x_t &states) {
 
   std::scoped_lock lock(mutex_lkf);
 
-  states = m_sc;
+  states = m_sc.x;
 
   return true;
 }
@@ -359,7 +357,7 @@ bool LateralEstimator::setState(int state_id, const double &state) {
 
 /*  //{ setStates() */
 
-bool LateralEstimator::setStates(const x_t &states) {
+bool LateralEstimator::setStates(const lat_x_t &states) {
 
   /*  //{ sanity checks */
 
@@ -539,7 +537,7 @@ bool LateralEstimator::setQ(double cov, const Eigen::Vector2i &idx) {
 
 /*  //{ reset() */
 
-bool LateralEstimator::reset(const LatState2D &states) {
+bool LateralEstimator::reset(const lat_x_t &states) {
 
   /*  //{ sanity checks */
 

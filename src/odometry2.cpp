@@ -37,7 +37,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include <mrs_lib/median_filter.h>
-#include <mrs_lib/geometry.h>
+#include <mrs_lib/geometry/cyclic.h>
 
 #include "types.h"
 #include "altitude_estimator.h"
@@ -122,7 +122,7 @@ private:
   std::atomic<double> baro_alt_correction_;
   std::atomic<double> baro_alt_correction_prev_;
   std::atomic_bool got_baro_alt_correction_ = false;
-  ros::Time time_baro_prev_;
+  rclcpp::Time time_baro_prev_;
 
   // Heading estimation
   std::shared_ptr<HeadingEstimator> hector_hdg_estimator_;
@@ -195,7 +195,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::TimerBase::SharedPtr     odometry_timer_;
   void                             odometryRoutine(void);
-  ros::Time                        time_odometry_timer_prev_;
+  rclcpp::Time                        time_odometry_timer_prev_;
 
   // utils
   template <class T>
@@ -236,7 +236,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   //}
 
 /* initialize altitude estimation //{*/
-  ROS_INFO("[Odometry]: Loading altitude estimation parameters");
+  RCLCPP_INFO(this->get_logger(), "[Odometry]: Loading altitude estimation parameters");
 
   /* altitude median filters //{ */
 
@@ -292,7 +292,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 /*//}*/
 
 /* initialize heading estimation //{*/
-  ROS_INFO("[Odometry]: Loading heading estimation parameters");
+  RCLCPP_INFO(this->get_logger(), "[Odometry]: Loading heading estimation parameters");
 
   /* heading measurement covariances (R matrices) //{ */
 
@@ -319,7 +319,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 /*//}*/
 
   /* initialize lateral estimation //{*/
-  ROS_INFO("[Odometry]: Loading lateral estimation parameters");
+  RCLCPP_INFO(this->get_logger(), "[Odometry]: Loading lateral estimation parameters");
 
   /* lateral measurement covariances (R matrices) //{ */
 
@@ -451,18 +451,20 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
   
   if (!std::isfinite(msg->pose.position.x)) {
-    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!");
+    auto &clk       = *this->get_clock();
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!");
     return;
   }
 
   if (!std::isfinite(msg->pose.position.y)) {
-    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!");
+    auto &clk       = *this->get_clock();
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!");
     return;
   }
 
   // wait for hector convergence to initial position
   if (c_hector_init_msgs_++ < 10) {
-    ROS_INFO("[Odometry]: Hector pose #%d - x: %f y: %f", c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
+    RCLCPP_INFO(this->get_logger(), "[Odometry]: Hector pose #%d - x: %f y: %f", c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
     return;
   }
 
@@ -477,17 +479,17 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   hdg_hector = mrs_lib::geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
   hector_hdg_previous_ = hdg_hector;
   got_hector_hdg_correction_ = true;
-  ROS_INFO_ONCE("[Odometry]: Getting hector heading corrections");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting hector heading corrections");
 
   }
   catch (...) {
-    ROS_WARN("[Odometry]: failed to getHeading() from hector orientation, dropping this correction");
+    RCLCPP_WARN(this->get_logger(), "[Odometry]: failed to getHeading() from hector orientation, dropping this correction");
   }
 
   hector_lat_correction_[0] = msg->pose.position.x
   hector_lat_correction_[1] = msg->pose.position.y
   got_hector_lat_correction_ = true;
-  ROS_INFO_ONCE("[Odometry]: Getting hector lateral corrections");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting hector lateral corrections");
 
 /*//}*/
 
@@ -599,24 +601,26 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   double measurement = getAltitudeFromPressure(msg->pressure, msg->temperature);
 
   if (!std::isfinite(measurement)) {
-    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"measurement\" (baroCallback) !!!");
+    auto &clk       = *this->get_clock();
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"measurement\" (baroCallback) !!!");
     return;
   }
 
   if (!got_baro_alt_correction_) {
     baro_alt_correction_prev_ = baro_alt_correction_;
-    time_baro_prev_ = ros::Time::now();
+    time_baro_prev_ = rclcpp::Time::now();
     got_baro_alt_correction_ = true;
     return;
   }
     // calculate time since last estimators update
     double    dt;
-    ros::Time time_now    = ros::Time::now();
+    rclcpp::Time time_now    = rclcpp::Time::now();
     dt                    = (time_now - time_baro_prev_).toSec();
     time_baro_prev_ = time_now;
 
     if (dt <= 0.0) {
-      ROS_DEBUG_THROTTLE(1.0, "[Odometry]: baro callback dt=%f, discarding correction.", dt);
+      auto &clk       = *this->get_clock();
+      RCLCPP_DEBUG_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: baro callback dt=%f, discarding correction.", dt);
       return;
     }
 
@@ -624,7 +628,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   baro_alt_correction_ = (measurement - baro_alt_correction_prev_) / dt;
   baro_alt_correction_prev_ = measurement;
 
-  ROS_INFO_ONCE("[Odometry]: Getting barometric altitude corrections");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting barometric altitude corrections");
 }
 //}
 
@@ -640,14 +644,16 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 
   double measurement = msg->range;
   if (!std::isfinite(measurement)) {
-    ROS_ERROR_THROTTLE(1.0, "[Odometry]: not finite value detected in variable \"measurement\" (garminCallback) !!!");
+      auto &clk       = *this->get_clock();
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"measurement\" (garminCallback) !!!");
     return;
   }
 
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
   if (isUavFlying()) {
     if (!alt_mf_garmin_->isValid(measurement)) {
-      ROS_WARN_THROTTLE(1.0, "[Odometry]: Garmin measurement %f declined by median filter.", measurement);
+      auto &clk       = *this->get_clock();
+      RCLCPP_WARN_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: Garmin measurement %f declined by median filter.", measurement);
       return;
     }
   }
@@ -655,7 +661,7 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
   garmin_alt_correction_ = measurement;
   got_garmin_alt_correction_ = true;
 
-  ROS_INFO_ONCE("[Odometry]: Getting Garmin altitude corrections");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting Garmin altitude corrections");
 }
 //}
 
@@ -927,12 +933,13 @@ void Odometry2::updateEstimators() {
 
     // calculate time since last estimators update
     double    dt;
-    ros::Time time_now    = ros::Time::now();
+    rclcpp::Time time_now    = rclcpp::Time::now();
     dt                    = (time_now - time_odometry_timer_prev_).toSec();
     time_odometry_timer_prev_ = time_now;
 
     if (dt <= 0.0) {
-      ROS_DEBUG_THROTTLE(1.0, "[Odometry]: odometry timer dt=%f, skipping estimator update.", dt);
+      auto &clk       = *this->get_clock();
+      RCLCPP_DEBUG_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: odometry timer dt=%f, skipping estimator update.", dt);
       return;
     }
 
