@@ -392,7 +392,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // service handlers
   change_odometry_source_ =
       this->create_service<fog_msgs::srv::ChangeEstimator>("~/change_odometry_source", std::bind(&Odometry2::callbackChangeEstimator, this, _1, _2));
-  getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/odom_available", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
+  getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/getting_odom", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
   get_origin_service_   = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
 
   odometry_timer_ =

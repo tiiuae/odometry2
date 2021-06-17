@@ -49,7 +49,7 @@ def generate_launch_description():
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
 
                     ("~/get_origin", "~/get_origin"),
-                    ("~/odom_available", "~/odom_available"),
+                    ("~/getting_odom", "~/getting_odom"),
                 ],
             ),
         ],
