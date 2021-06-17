@@ -30,8 +30,6 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
 
-  <depend>mrs_lib</depend>
-
   <!-- this is needed to be able to run launch files -->
   <depend>odometry2_py</depend>
 

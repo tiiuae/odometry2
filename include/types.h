@@ -4,7 +4,7 @@
 
 #include <Eigen/Eigen>
 
-#include <mrs_lib/lkf.h>
+#include <lib/lkf.h>
 
 /* defines //{ */
 
@@ -50,7 +50,7 @@
 /* typedefs //{ */
 
 // lateral
-typedef mrs_lib::LKF<LAT_N_STATES, LAT_M_INPUTS, LAT_P_MEASUREMENTS> lkf_lat_t;
+typedef LKF<LAT_N_STATES, LAT_M_INPUTS, LAT_P_MEASUREMENTS> lkf_lat_t;
 typedef lkf_lat_t::statecov_t                                        lat_statecov_t;
 typedef lkf_lat_t::x_t                                               lat_x_t;
 typedef lkf_lat_t::u_t                                               lat_u_t;
@@ -63,7 +63,7 @@ typedef lkf_lat_t::Q_t                                               lat_Q_t;
 typedef lkf_lat_t::P_t                                               lat_P_t;
 
 // altitude
-typedef mrs_lib::LKF<ALT_N_STATES, ALT_M_INPUTS, ALT_P_MEASUREMENTS> lkf_alt_t;
+typedef LKF<ALT_N_STATES, ALT_M_INPUTS, ALT_P_MEASUREMENTS> lkf_alt_t;
 typedef lkf_alt_t::statecov_t                                        alt_statecov_t;
 typedef lkf_alt_t::x_t                                               alt_x_t;
 typedef lkf_alt_t::u_t                                               alt_u_t;
@@ -76,7 +76,7 @@ typedef lkf_alt_t::Q_t                                               alt_Q_t;
 typedef lkf_alt_t::P_t                                               alt_P_t;
 
 // heading
-typedef mrs_lib::LKF<HDG_N_STATES, HDG_M_INPUTS, HDG_P_MEASUREMENTS> lkf_hdg_t;
+typedef LKF<HDG_N_STATES, HDG_M_INPUTS, HDG_P_MEASUREMENTS> lkf_hdg_t;
 typedef lkf_hdg_t::statecov_t                                        hdg_statecov_t;
 typedef lkf_hdg_t::x_t                                               hdg_x_t;
 typedef lkf_hdg_t::u_t                                               hdg_u_t;

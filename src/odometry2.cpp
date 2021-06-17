@@ -36,8 +36,8 @@
 #include <std_msgs/msg/color_rgba.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
-#include <mrs_lib/median_filter.h>
-#include <mrs_lib/geometry/cyclic.h>
+#include <lib/median_filter.h>
+#include <lib/geometry/cyclic.h>
 
 #include "types.h"
 #include "odometry_utils.h"
@@ -479,20 +479,19 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
 
   if (!std::isfinite(msg->pose.position.x)) {
-    auto &clk = *this->get_clock();
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!");
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!", this->get_name());
     return;
   }
 
   if (!std::isfinite(msg->pose.position.y)) {
     auto &clk = *this->get_clock();
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), clk, 1000, "[Odometry]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!");
+    RCLCPP_ERROR_THROTTLE(this->get_logger(),*this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!", this->get_name());
     return;
   }
 
   // wait for hector convergence to initial position
   if (c_hector_init_msgs_++ < 10) {
-    RCLCPP_INFO(this->get_logger(), "[Odometry]: Hector pose #%d - x: %f y: %f", c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
+    RCLCPP_INFO(this->get_logger(), "[%s]: Hector pose #%d - x: %f y: %f", this->get_name(), c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
     return;
   }
 
@@ -504,19 +503,19 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     hdg_hector = odometry_utils::getHeading(msg->pose.orientation);
 
     // unwrap heading to prevent discrete jumps
-    hdg_hector                 = mrs_lib::geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
+    hdg_hector                 = geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
     hector_hdg_previous_       = hdg_hector;
     got_hector_hdg_correction_ = true;
-    RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting hector heading corrections");
+    RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector heading corrections", this->get_name());
   }
   catch (...) {
-    RCLCPP_WARN(this->get_logger(), "[Odometry]: failed to getHeading() from hector orientation, dropping this correction");
+    RCLCPP_WARN(this->get_logger(), "[%s]: failed to getHeading() from hector orientation, dropping this correction", this->get_name());
   }
 
   hector_lat_correction_[0]  = msg->pose.position.x;
   hector_lat_correction_[1]  = msg->pose.position.y;
   got_hector_lat_correction_ = true;
-  RCLCPP_INFO_ONCE(this->get_logger(), "[Odometry]: Getting hector lateral corrections");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector lateral corrections", this->get_name());
 
   /*//}*/
 }
