@@ -16,7 +16,7 @@
 // lateral
 #define LAT_N_STATES 6
 #define LAT_M_INPUTS 2
-#define LAT_P_MEASUREMENTS 1
+#define LAT_P_MEASUREMENTS 2
 
 // altitude
 #define ALT_N_STATES 3

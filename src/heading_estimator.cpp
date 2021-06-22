@@ -171,7 +171,7 @@ bool HeadingEstimator::doPrediction(const double input, double dt) {
   A(0, 2) = dt_sq;
 
   hdg_u_t u;
-  u << input;
+  u << 0.0, input;
 
   {
     std::scoped_lock lock(mutex_lkf);

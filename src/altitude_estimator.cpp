@@ -71,6 +71,8 @@ AltitudeEstimator::AltitudeEstimator(
     }
   }
 
+  std::cout << "3";
+
   //}
 
   // clang-format off

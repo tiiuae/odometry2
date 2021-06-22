@@ -9,10 +9,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <mutex>
 
-class MedianFilter {
+class MedianFilter : public rclcpp::Node {
 
 public:
-  MedianFilter(int buffer_size, double max_valid_value, double min_valid_value, double max_difference);
+  MedianFilter(int buffer_size, double max_valid_value, double min_valid_value, double max_difference, rclcpp::NodeOptions options);
   bool   isValid(double input);
   bool   isFilled();
   double getMedian();

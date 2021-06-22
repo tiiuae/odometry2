@@ -30,7 +30,7 @@ include_directories(
 )
 
 ## --------------------------------------------------------------
-## |                       compile                              |
+## |                      odometry2 package                     |
 ## --------------------------------------------------------------
 
 add_library(odometry2 SHARED
@@ -38,6 +38,7 @@ add_library(odometry2 SHARED
   src/altitude_estimator.cpp
   src/heading_estimator.cpp
   src/lateral_estimator.cpp
+  src/lib/median_filter.cpp
   )
 
 target_compile_definitions(odometry2

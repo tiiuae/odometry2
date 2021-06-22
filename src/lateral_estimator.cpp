@@ -25,7 +25,8 @@ LateralEstimator::LateralEstimator(
   m_n_measurement_types = 1;
 
   lat_H_t pos_H, vel_H, acc_H;
-  pos_H << 1, 0, 0;
+  pos_H << 1, 0, 0, 0, 0, 0,
+        0, 1, 0, 0, 0, 0;
   m_H_multi = {pos_H};
 
   /*  //{ sanity checks */
@@ -71,8 +72,12 @@ LateralEstimator::LateralEstimator(
          0, 0, 0, 0, 1-m_b, 0,
          0, 0, 0, 0, 0, 1-m_b;
 
-  m_B << 0, 0, 0, 0, m_b, 0,
-         0, 0, 0, 0, 0, m_b;
+  m_B << 0, 0, 
+         0, 0, 
+         0, 0, 
+         0, 0, 
+         m_b, 0,
+         0, m_b;
 
   // clang-format on
 

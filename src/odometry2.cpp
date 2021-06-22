@@ -1,5 +1,6 @@
 #include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
 #include <mutex>
+#include <rclcpp/node_options.hpp>
 #include <rclcpp/subscription.hpp>
 #include <thread>
 #include <rclcpp/rclcpp.hpp>
@@ -204,6 +205,7 @@ private:
   rclcpp::TimerBase::SharedPtr     odometry_timer_;
   void                             odometryRoutine(void);
   rclcpp::Time                     time_odometry_timer_prev_;
+  std::atomic_bool                 time_odometry_timer_set_ = false;
 
   // utils
   template <class T>
@@ -257,7 +259,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // Garmin
   parse_param("altitude.median_filter.garmin.buffer_size", buffer_size);
   parse_param("altitude.median_filter.garmin.max_diff", max_diff);
-  alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff);
+  alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff, rclcpp::NodeOptions());
 
   //}
 
@@ -295,12 +297,11 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   alt_Q_t Q_alt;
   double  alt_pos, alt_vel, alt_acc;
   parse_param("altitude.process_covariance.pos", alt_pos);
+  Q_alt(STATE_POS, STATE_POS) *= alt_pos;
   parse_param("altitude.process_covariance.vel", alt_vel);
+  Q_alt(STATE_VEL, STATE_VEL) *= alt_vel;
   parse_param("altitude.process_covariance.acc", alt_acc);
-  alt_Q_t alt_Q_vec_tmp;
-  alt_Q_vec_tmp << alt_pos, alt_vel, alt_acc;
-  Q_alt = Q_alt.Identity() * alt_Q_vec_tmp;
-
+  Q_alt(STATE_ACC, STATE_ACC) *= alt_acc;
 
   //}
 
@@ -479,13 +480,15 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
 
   if (!std::isfinite(msg->pose.position.x)) {
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!", this->get_name());
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.x\" (hectorCallback) !!!",
+                          this->get_name());
     return;
   }
 
   if (!std::isfinite(msg->pose.position.y)) {
     auto &clk = *this->get_clock();
-    RCLCPP_ERROR_THROTTLE(this->get_logger(),*this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!", this->get_name());
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"pose.position.y\" (hectorCallback) !!!",
+                          this->get_name());
     return;
   }
 
@@ -637,7 +640,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   if (!got_baro_alt_correction_) {
     baro_alt_measurement_prev_ = measurement;
     baro_alt_correction_       = 0.0;
-    time_baro_prev_            = rclcpp::Time();
+    time_baro_prev_            = this->get_clock()->now();
     got_baro_alt_correction_   = true;
     return;
   }
@@ -985,6 +988,11 @@ void Odometry2::setupEstimator(const std::string &type) {
 /* updateEstimators //{*/
 void Odometry2::updateEstimators() {
 
+  if (!time_odometry_timer_set_) {
+    time_odometry_timer_prev_ = this->get_clock()->now();
+    time_odometry_timer_set_  = true;
+  }
+
   // calculate time since last estimators update
   double       dt;
   rclcpp::Time time_now     = this->get_clock()->now();
@@ -1010,9 +1018,9 @@ void Odometry2::updateEstimators() {
   /* TODO: add control input to prediction? */
   garmin_alt_estimator_->doPrediction(0.0, dt);
 
-  /*//}*/
+  //}
 
-  /* heading estimator update and predict //{*/
+  /* heading estimator update and predict //{ */
 
   if (got_hector_hdg_correction_) {
     hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_HECTOR);
@@ -1025,14 +1033,14 @@ void Odometry2::updateEstimators() {
   /* TODO: add control input to prediction? */
   hector_hdg_estimator_->doPrediction(0.0, dt);
 
-  if (got_hector_lat_correction_) {
-    hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR);
-  }
+   if (got_hector_lat_correction_) { 
+     hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR); 
+   } 
 
-  /* TODO: add control input to prediction? */
-  hector_lat_estimator_->doPrediction(0.0, 0.0, dt);
+   /* TODO: add control input to prediction? */ 
+   hector_lat_estimator_->doPrediction(0.0, 0.0, dt); 
 
-  /*//}*/
+  //}
 }
 
 /*//}*/
