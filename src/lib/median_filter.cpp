@@ -25,7 +25,7 @@ MedianFilter::MedianFilter(int buffer_size, double max_valid_value, double min_v
   buffer.resize(buffer_size);
   next     = 0;
   m_median = 0;
-  RCLCPP_INFO(this->get_logger(), "[MedianFilter]: initialized, buffer size: %d", buffer_size);
+  RCLCPP_INFO(this->get_logger(), "[%s]: initialized, buffer size: %d", this->get_name(), buffer_size);
 }
 
 //}
@@ -114,7 +114,7 @@ bool MedianFilter::isValid(double input) {
     return valid;
   } else {
 
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000.0, "[MedianFilter]: received value is not a finite number!");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000.0, "[%s]: received value is not a finite number!", this->get_name());
     return false;
   }
 }
