@@ -49,6 +49,8 @@
 
 /* typedefs //{ */
 
+typedef Eigen::Matrix<double, 2, 1> Vec2;
+
 // lateral
 typedef LKF<LAT_N_STATES, LAT_M_INPUTS, LAT_P_MEASUREMENTS> lkf_lat_t;
 typedef lkf_lat_t::statecov_t                                        lat_statecov_t;

@@ -38,6 +38,7 @@ def generate_launch_description():
                 ],
                 remappings=[
                     ("~/local_odom_out", "~/local_odom"),
+                    ("~/local_hector_out", "~/local_hector"),
 
                     ("~/timesync_in", "/" + DRONE_DEVICE_ID + "/Timesync_PubSubTopic"),
                     ("~/gps_in", "/" + DRONE_DEVICE_ID + "/VehicleGlobalPosition_PubSubTopic"),

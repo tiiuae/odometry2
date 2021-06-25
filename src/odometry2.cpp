@@ -155,6 +155,7 @@ private:
 
   // publishers
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_hector_publisher_;
 
   // subscribers
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr              timesync_subscriber_;
@@ -378,7 +379,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   setupEstimator(_estimator_source_param_);
 
   // publishers
-  local_odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
+  local_odom_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
+  local_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
 
   // subscribers
   timesync_subscriber_ = this->create_subscription<px4_msgs::msg::Timesync>("~/timesync_in", 10, std::bind(&Odometry2::timesyncCallback, this, _1));
@@ -398,7 +400,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   odometry_timer_ =
       this->create_wall_timer(std::chrono::duration<double>(1.0 / odometry_loop_rate_), std::bind(&Odometry2::odometryRoutine, this), callback_group_);
-
 
   tf_broadcaster_        = nullptr;
   static_tf_broadcaster_ = nullptr;
@@ -616,6 +617,7 @@ bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::Cha
 /* baroCallback //{ */
 void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   if (!is_initialized_) {
+    RCLCPP_INFO_ONCE(this->get_logger(), "Not getting baro!");
     return;
   }
   getting_baro_ = true;
@@ -624,10 +626,12 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   /* TODO: get AGL altitude from pressure, temperature and takeoff ASL altitude */
   /* double measurement = odometry_utils::getAltitudeFromPressure(msg->pressure, msg->temperature); */
   double measurement = 0.0;
-  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: getAltitudeFromPressure() not implemented. Using 0 for testing !!!", this->get_name());
+  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: getAltitudeFromPressure() not implemented. Using 0 for testing !!!",
+                       this->get_name());
 
   if (!std::isfinite(measurement)) {
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"measurement\" (baroCallback) !!!", this->get_name());
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"measurement\" (baroCallback) !!!",
+                          this->get_name());
     return;
   }
 
@@ -645,7 +649,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   time_baro_prev_       = time_now;
 
   if (dt <= 0.0) {
-    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: baro callback dt=%f, discarding correction.",this->get_name(), dt);
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: baro callback dt=%f, discarding correction.", this->get_name(), dt);
     return;
   }
 
@@ -667,7 +671,8 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 
   double measurement = msg->range;
   if (!std::isfinite(measurement)) {
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"measurement\" (garminCallback) !!!", this->get_name());
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"measurement\" (garminCallback) !!!",
+                          this->get_name());
     return;
   }
 
@@ -888,7 +893,8 @@ bool Odometry2::isValidGate(const double value, const double min_value, const do
   // Min value check
   if (value < min_value) {
     if (value_name != "") {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: %s value %f < %f is not valid.", this->get_name(), value_name.c_str(), value, min_value);
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: %s value %f < %f is not valid.", this->get_name(), value_name.c_str(), value,
+                           min_value);
     }
     return false;
   }
@@ -896,7 +902,8 @@ bool Odometry2::isValidGate(const double value, const double min_value, const do
   // Max value check
   if (value > max_value) {
     if (value_name != "") {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: %s value %f > %f is not valid.", this->get_name(), value_name.c_str(), value, max_value);
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: %s value %f > %f is not valid.", this->get_name(), value_name.c_str(), value,
+                           max_value);
     }
     return false;
   }
@@ -1029,6 +1036,56 @@ void Odometry2::updateEstimators() {
   hector_lat_estimator_->doPrediction(0.0, 0.0, dt);
 
   //}
+
+  // publish odometry
+  nav_msgs::msg::Odometry msg;
+  msg.header.stamp    = this->get_clock()->now();
+  msg.header.frame_id = world_frame_;
+  msg.child_frame_id  = fcu_frame_;
+
+  // altitude
+  alt_x_t alt_x = alt_x.Zero();
+
+  if (!garmin_alt_estimator_->getStates(alt_x)) {
+    RCLCPP_WARN(this->get_logger(), "[%s]: Altitude estimator not initialized.", this->get_name());
+    return;
+  }
+
+  // heading
+  double                         hdg;
+  Eigen::Matrix3d                mat;
+  Eigen::Quaterniond             quaternion;
+  geometry_msgs::msg::Quaternion geom_quaternion;
+
+  hector_hdg_estimator_->getState(0, hdg);
+
+  mat        = Eigen::AngleAxisd(hdg, Eigen::Vector3d::UnitZ());
+  quaternion = Eigen::Quaterniond(mat);
+
+  geom_quaternion.x = quaternion.x();
+  geom_quaternion.y = quaternion.y();
+  geom_quaternion.z = quaternion.z();
+  geom_quaternion.w = quaternion.w();
+
+  // lateral
+  double pos_x, pos_y, vel_x, vel_y, acc_x, acc_y;
+
+  hector_lat_estimator_->getState(0, pos_x);
+  hector_lat_estimator_->getState(1, pos_y);
+  hector_lat_estimator_->getState(2, vel_x);
+  hector_lat_estimator_->getState(3, vel_y);
+  hector_lat_estimator_->getState(4, acc_x);
+  hector_lat_estimator_->getState(5, acc_y);
+
+  msg.pose.pose.position.x  = pos_x;
+  msg.pose.pose.position.y  = pos_y;
+  msg.pose.pose.position.z  = alt_x(0);  // HEIGHT
+  msg.twist.twist.linear.x  = vel_x;
+  msg.twist.twist.linear.y  = vel_y;
+  msg.twist.twist.linear.z  = alt_x(1);  // ACCELERATION
+  msg.pose.pose.orientation = geom_quaternion;
+
+  local_hector_publisher_->publish(msg);
 }
 
 /*//}*/
