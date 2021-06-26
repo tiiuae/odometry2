@@ -5,6 +5,11 @@ param_namespace:
 # altitude estimation # #{
   altitude:
 
+    median_filter:
+      garmin:
+        buffer_size: 100.0
+        max_diff: 2.0
+
     gate: # values outside of this range are not fused [meters]
       garmin:
         min: 0.05

@@ -317,10 +317,10 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   hdg_R_t R_hdg;
   double  R_hdg_tmp;
-  parse_param("heading.R.hector", R_hdg_tmp);
+  parse_param("heading.measurement_covariance.hector", R_hdg_tmp);
   R_hdg = R_hdg.Identity() * R_hdg_tmp;
   R_hdg_vec_.push_back(R_hdg);
-  parse_param("heading.R.gyro", R_hdg_tmp);
+  parse_param("heading.measurement_covariance.gyro", R_hdg_tmp);
   R_hdg = R_hdg.Identity() * R_hdg_tmp;
   R_hdg_vec_.push_back(R_hdg);
 
@@ -663,6 +663,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
 
 /* garminCallback //{ */
 void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
+  RCLCPP_INFO(this->get_logger(), "[%s]: Garmin!", this->get_name());
   if (!is_initialized_) {
     return;
   }
@@ -1082,7 +1083,7 @@ void Odometry2::updateEstimators() {
   msg.pose.pose.position.z  = alt_x(0);  // HEIGHT
   msg.twist.twist.linear.x  = vel_x;
   msg.twist.twist.linear.y  = vel_y;
-  msg.twist.twist.linear.z  = alt_x(1);  // ACCELERATION
+  msg.twist.twist.linear.z  = alt_x(1);  // VELOCITY
   msg.pose.pose.orientation = geom_quaternion;
 
   local_hector_publisher_->publish(msg);

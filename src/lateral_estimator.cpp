@@ -53,9 +53,9 @@ LateralEstimator::LateralEstimator(
 
   // Check size of m_R_multi elements
   for (size_t i = 0; i < m_R_multi.size(); i++) {
-    if (m_R_multi[i].rows() != 1 || m_R_multi[i].cols() != 1) {
+    if (m_R_multi[i].rows() != 2 || m_R_multi[i].cols() != 2) {
       std::cerr << "[LateralEstimator]: " << m_estimator_name << ".LateralEstimator()"
-                << "): wrong size of \"m_R_multi[" << i << "]\". Should be: (1, " << 1 << ") is: (" << m_R_multi[i].rows() << ", " << m_R_multi[i].cols() << ")"
+                << "): wrong size of \"m_R_multi[" << i << "]\". Should be: (2, " << 2 << ") is: (" << m_R_multi[i].rows() << ", " << m_R_multi[i].cols() << ")"
                 << std::endl;
       return;
     }
