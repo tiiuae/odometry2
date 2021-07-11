@@ -2,6 +2,7 @@
 #include <mutex>
 #include <rclcpp/node_options.hpp>
 #include <rclcpp/subscription.hpp>
+#include <tf2/LinearMath/Matrix3x3.h>
 #include <thread>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/time.hpp>
@@ -17,9 +18,14 @@
 
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_global_position.hpp>
+#include <px4_msgs/msg/vehicle_gps_position.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/timesync.hpp>
 #include <px4_msgs/msg/sensor_baro.hpp>
+#include <px4_msgs/msg/sensor_gps.hpp>
+
+#include "geodesy/utm.h"
+#include "geodesy/wgs84.h"
 
 #include <mavsdk/geometry.h>
 
@@ -96,13 +102,19 @@ private:
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 
+  // FAKE GPS
+  geographic_msgs::msg::GeoPoint point_;
+  geodesy::UTMPoint              home_;
+  px4_msgs::msg::SensorGps       sensor_gps_;
+  std::mutex                     mutex_sensor_gps_;
+
   // GPS
   std::atomic<float> pos_gps_[3];
   std::atomic<float> ori_gps_[4];
   /* std::mutex mutex_gps_; */
 
   // Hector
-  std::atomic<float> pos_hector_[3];
+  std::atomic<float> pos_hector_[2];
   std::atomic<float> ori_hector_[4];
   /* std::mutex mutex_hector_; */
   int    c_hector_init_msgs_  = 0;
@@ -112,6 +124,8 @@ private:
   std::atomic<float> pos_local_[3];
   std::atomic<float> ori_local_[4];
   /* std::mutex mutex_local_; */
+  tf2::Quaternion mavros_orientation_;
+  std::mutex      mutex_mavros_orientation_;
 
   // Altitude estimation
   std::shared_ptr<AltitudeEstimator> garmin_alt_estimator_;
@@ -154,13 +168,15 @@ private:
   std::atomic<unsigned long long> timestamp_;
 
   // publishers
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_hector_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr  local_odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr  local_hector_publisher_;
+  rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr pixhawk_odom_publisher_;
 
   // subscribers
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr              timesync_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr gps_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr       pixhawk_odom_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleGpsPosition>::SharedPtr    gps_raw_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr            baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr      hector_pose_subscriber_;
   rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr              garmin_subscriber_;
@@ -169,6 +185,7 @@ private:
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
   void gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::UniquePtr msg);
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
+  void gpsRawCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg);
   void hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg);
   void baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg);
   void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg);
@@ -196,6 +213,7 @@ private:
   void publishTF();
   void publishStaticTF();
   void publishLocalOdom();
+  void publishPixhawkOdom();
   void updateEstimators();
 
   geometry_msgs::msg::PoseStamped transformBetween(std::string frame_from, std::string frame_to);
@@ -220,6 +238,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   RCLCPP_INFO(this->get_logger(), "[%s]: Initializing...", this->get_name());
   ref.latitude_deg = 0.0;
   ref.latitude_deg = 0.0;
+
+  // Initialize fake gps
+  point_ = geographic_msgs::msg::GeoPoint();
 
   // Getting
   try {
@@ -381,16 +402,23 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // publishers
   local_odom_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
   local_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
+  pixhawk_odom_publisher_ = this->create_publisher<px4_msgs::msg::SensorGps>("~/pixhawk_odom_out", 10);
 
   // subscribers
-  timesync_subscriber_ = this->create_subscription<px4_msgs::msg::Timesync>("~/timesync_in", 10, std::bind(&Odometry2::timesyncCallback, this, _1));
-  gps_subscriber_      = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>("~/gps_in", 10, std::bind(&Odometry2::gpsCallback, this, _1));
-  pixhawk_odom_subscriber_ =
-      this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", 10, std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
-  hector_pose_subscriber_ =
-      this->create_subscription<geometry_msgs::msg::PoseStamped>("~/hector_pose_in", 10, std::bind(&Odometry2::hectorPoseCallback, this, _1));
-  garmin_subscriber_ = this->create_subscription<sensor_msgs::msg::Range>("~/garmin_in", 10, std::bind(&Odometry2::garminCallback, this, _1));
-  baro_subscriber_   = this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", 10, std::bind(&Odometry2::baroCallback, this, _1));
+  timesync_subscriber_ =
+      this->create_subscription<px4_msgs::msg::Timesync>("~/timesync_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::timesyncCallback, this, _1));
+  gps_subscriber_ =
+      this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>("~/gps_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::gpsCallback, this, _1));
+  pixhawk_odom_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
+                                                                                       std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
+  gps_raw_subscriber_      = this->create_subscription<px4_msgs::msg::VehicleGpsPosition>("~/gps_raw_in", rclcpp::SystemDefaultsQoS(),
+                                                                                     std::bind(&Odometry2::gpsRawCallback, this, _1));
+  hector_pose_subscriber_  = this->create_subscription<geometry_msgs::msg::PoseStamped>("~/hector_pose_in", rclcpp::SystemDefaultsQoS(),
+                                                                                       std::bind(&Odometry2::hectorPoseCallback, this, _1));
+  garmin_subscriber_ =
+      this->create_subscription<sensor_msgs::msg::Range>("~/garmin_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::garminCallback, this, _1));
+  baro_subscriber_ =
+      this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::baroCallback, this, _1));
 
   // service handlers
   change_odometry_source_ =
@@ -432,7 +460,11 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGlobalPosition::UniquePt
   if (!getting_gps_) {
     ref.latitude_deg  = msg->lat;
     ref.longitude_deg = msg->lon;
-    getting_gps_      = true;
+
+    point_.latitude  = msg->lat;
+    point_.longitude = msg->lon;
+
+    getting_gps_ = true;
     RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS!", this->get_name());
   }
 }
@@ -453,10 +485,55 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
     ori_gps_[1] = msg->q[1];
     ori_gps_[2] = msg->q[2];
     ori_gps_[3] = msg->q[3];
+
+    std::scoped_lock lock(mutex_mavros_orientation_);
+
+    mavros_orientation_.setW(msg->q[0]);
+    mavros_orientation_.setX(msg->q[1]);
+    mavros_orientation_.setY(msg->q[2]);
+    mavros_orientation_.setZ(msg->q[3]);
   }
 
   getting_pixhawk_odom_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting pixhawk odometry!", this->get_name());
+}
+//}
+
+/* gpsRawCallback //{ */
+void Odometry2::gpsRawCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg) {
+  if (!is_initialized_) {
+    return;
+  }
+
+  {
+    std::scoped_lock lock(mutex_sensor_gps_);
+    sensor_gps_.timestamp      = msg->timestamp;
+    sensor_gps_.lat            = msg->lat;
+    sensor_gps_.lon            = msg->lon;
+    sensor_gps_.alt            = msg->alt;
+    sensor_gps_.s_variance_m_s = msg->s_variance_m_s;
+
+    sensor_gps_.fix_type = msg->fix_type;
+    sensor_gps_.eph      = msg->eph;
+    sensor_gps_.epv      = msg->epv;
+    sensor_gps_.hdop     = msg->hdop;
+    sensor_gps_.vdop     = msg->vdop;
+
+    sensor_gps_.vel_m_s       = msg->vel_m_s;
+    sensor_gps_.vel_n_m_s     = msg->vel_n_m_s;
+    sensor_gps_.vel_e_m_s     = msg->vel_e_m_s;
+    sensor_gps_.vel_d_m_s     = msg->vel_d_m_s;
+    sensor_gps_.cog_rad       = msg->cog_rad;
+    sensor_gps_.vel_ned_valid = msg->vel_ned_valid;
+
+    sensor_gps_.time_utc_usec = msg->time_utc_usec;
+
+    sensor_gps_.satellites_used = msg->satellites_used;
+    sensor_gps_.heading         = msg->heading;
+    sensor_gps_.heading_offset  = msg->heading_offset;
+  }
+
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting raw GPS!", this->get_name());
 }
 //}
 
@@ -470,7 +547,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     /* std::scoped_lock lock(mutex_hector_); */
     pos_hector_[0] = msg->pose.position.x;
     pos_hector_[1] = msg->pose.position.y;
-    pos_hector_[2] = 0;  // TODO:: Hector does not provide z. We have to combine the information from pixhawk z fusion of garmin and barometer
+
     ori_hector_[0] = msg->pose.orientation.w;
     ori_hector_[1] = msg->pose.orientation.x;
     ori_hector_[2] = msg->pose.orientation.y;
@@ -502,7 +579,6 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   double hdg_hector;
   try {
-    /* TODO: implement getHeading() */
     hdg_hector = odometry_utils::getHeading(msg->pose.orientation);
 
     // unwrap heading to prevent discrete jumps
@@ -621,7 +697,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
     return;
   }
   getting_baro_ = true;
-  RCLCPP_INFO_ONCE(this->get_logger(), "Getting baro!");
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting baro!", this->get_name());
 
   /* TODO: get AGL altitude from pressure, temperature and takeoff ASL altitude */
   /* double measurement = odometry_utils::getAltitudeFromPressure(msg->pressure, msg->temperature); */
@@ -663,7 +739,6 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
 
 /* garminCallback //{ */
 void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
-  RCLCPP_INFO(this->get_logger(), "[%s]: Garmin!", this->get_name());
   if (!is_initialized_) {
     return;
   }
@@ -709,6 +784,7 @@ void Odometry2::odometryRoutine(void) {
 
     publishTF();
     publishLocalOdom();
+    publishPixhawkOdom();
   }
 }
 //}
@@ -843,6 +919,64 @@ void Odometry2::publishLocalOdom() {
   msg.pose.pose.orientation.y = tf.pose.orientation.y;
   msg.pose.pose.orientation.z = tf.pose.orientation.z;
   local_odom_publisher_->publish(msg);
+}
+//}
+
+/* publishPixhawkOdom //{*/
+void Odometry2::publishPixhawkOdom() {
+  {
+    std::scoped_lock lock(mutex_estimator_source_);
+    if (estimator_source_.type == fog_msgs::msg::EstimatorType::HECTOR) {
+      // TODO: Transform point from hector estimator into lat/long
+      //
+      /* geodesy::UTMPoint utm = geodesy::UTMPoint(_home); */
+      /* double            x   = pose.Pos[0]; */
+      /* double            y   = pose.Pos[1]; */
+      /* double            z   = pose.Pos[2]; */
+
+      /* double rotated_x = x * cos(_north_offset) - y * sin(_north_offset); */
+      /* double rotated_y = x * sin(_north_offset) + y * cos(_north_offset); */
+
+      /* utm.easting += rotated_x; */
+      /* utm.northing += rotated_y; */
+      /* utm.altitude += z; */
+
+      /* geographic_msgs::msg::GeoPoint point = toMsg(utm); */
+
+      /* sensor_gps.timestamp      = this->get_clock()->now(); */
+      /* sensor_gps.lat            = (uint32_t)(point.latitude * 10000000); */
+      /* sensor_gps.lon            = (uint32_t)(point.longitude * 10000000); */
+      /* sensor_gps.alt            = (uint32_t)(point.altitude * 1000); */
+      /* sensor_gps.s_variance_m_s = 0.2f; */
+
+      /* sensor_gps.fix_type = */
+      /*     2;  //# 0-1: no fix, 2: 2D fix, 3: 3D fix, 4: RTCM code differential, 5: Real-Time Kinematic, float, 6: Real-Time Kinematic, fixed, 8:
+       * Extrapolated. Some */
+      /*         // applications will not use the value of this field unless it is at least two, so always correctly fill in the fix. */
+      /* sensor_gps.eph  = 0.5f; */
+      /* sensor_gps.epv  = 0.8f; */
+      /* sensor_gps.hdop = 0.0f; */
+      /* sensor_gps.vdop = 0.0f; */
+
+      /* sensor_gps.vel_m_s       = sqrt(rotated_vx * rotated_vx + rotated_vy * rotated_vy); */
+      /* sensor_gps.vel_n_m_s     = rotated_vy; */
+      /* sensor_gps.vel_e_m_s     = rotated_vx; */
+      /* sensor_gps.vel_d_m_s     = -vz; */
+      /* sensor_gps.cog_rad       = atan2(rotated_vx, rotated_vy); */
+      /* sensor_gps.vel_ned_valid = 1; */
+
+      /* sensor_gps.time_utc_usec = _node->now().nanoseconds() / 1000ULL; */
+
+      /* sensor_gps.satellites_used = 16;  //_lighthouse_count; */
+      /* sensor_gps.heading         = heading_rad; */
+      /* sensor_gps.heading_offset  = 0.0f; */
+    }
+  }
+
+  {
+    std::scoped_lock lock(mutex_sensor_gps_);
+    pixhawk_odom_publisher_->publish(sensor_gps_);
+  }
 }
 //}
 
@@ -1001,7 +1135,7 @@ void Odometry2::updateEstimators() {
     return;
   }
 
-  /* altitude estimator update and predict //{*/
+  /* altitude estimator update and predict //{ */
 
   if (got_garmin_alt_correction_) {
     garmin_alt_estimator_->doCorrection(garmin_alt_correction_, ALT_GARMIN);
@@ -1040,9 +1174,11 @@ void Odometry2::updateEstimators() {
 
   // publish odometry
   nav_msgs::msg::Odometry msg;
-  msg.header.stamp    = this->get_clock()->now();
-  msg.header.frame_id = world_frame_;
-  msg.child_frame_id  = fcu_frame_;
+  msg.header.stamp = this->get_clock()->now();
+  /* msg.header.frame_id = world_frame_; */
+  /* msg.child_frame_id  = fcu_frame_; */
+  msg.header.frame_id = hector_origin_frame_;
+  msg.child_frame_id  = hector_frame_;
 
   // altitude
   alt_x_t alt_x = alt_x.Zero();
@@ -1053,15 +1189,35 @@ void Odometry2::updateEstimators() {
   }
 
   // heading
-  double                         hdg;
+  double                         hdg, mavros_hdg = 0;
   Eigen::Matrix3d                mat;
   Eigen::Quaterniond             quaternion;
   geometry_msgs::msg::Quaternion geom_quaternion;
+  tf2::Quaternion tf2_quaternion;
 
   hector_hdg_estimator_->getState(0, hdg);
 
-  mat        = Eigen::AngleAxisd(hdg, Eigen::Vector3d::UnitZ());
+  /* double mavros_hdg = 0; */
+  // Obtain mavros orientation
+  try {
+  mavros_hdg = odometry_utils::getHeading(tf2::toMsg(mavros_orientation_));
+  }
+  catch (...) {
+    RCLCPP_WARN(this->get_logger(), "[%s]: failed to getHeading() from mavros_orientation", this->get_name());
+  }
+
+  // Build rotation matrix from difference between new heading and mavros heading
+  mat        = Eigen::AngleAxisd(hdg - mavros_hdg, Eigen::Vector3d::UnitZ());
+
   quaternion = Eigen::Quaterniond(mat);
+
+  tf2_quaternion.setX(quaternion.x());
+  tf2_quaternion.setY(quaternion.y());
+  tf2_quaternion.setZ(quaternion.z());
+  tf2_quaternion.setW(quaternion.w());
+
+  // Transform the mavros orientation by the rotation matrix
+  quaternion = Eigen::Quaterniond(tf2::Transform(tf2::Matrix3x3(tf2_quaternion)) * mavros_orientation_);
 
   geom_quaternion.x = quaternion.x();
   geom_quaternion.y = quaternion.y();
@@ -1078,12 +1234,18 @@ void Odometry2::updateEstimators() {
   hector_lat_estimator_->getState(4, acc_x);
   hector_lat_estimator_->getState(5, acc_y);
 
-  msg.pose.pose.position.x  = pos_x;
-  msg.pose.pose.position.y  = pos_y;
-  msg.pose.pose.position.z  = alt_x(0);  // HEIGHT
-  msg.twist.twist.linear.x  = vel_x;
-  msg.twist.twist.linear.y  = vel_y;
-  msg.twist.twist.linear.z  = alt_x(1);  // VELOCITY
+  msg.pose.pose.position.x = pos_x;
+  msg.pose.pose.position.y = pos_y;
+  msg.pose.pose.position.z = pos_gps_[3];  // HEIGHT //TODO: Replace z with the altitude from estimators alt_x(0)
+  msg.twist.twist.linear.x = vel_x;
+  msg.twist.twist.linear.y = vel_y;
+  /* msg.twist.twist.linear.z  = alt_x(1);  // VELOCITY */  // TODO: Place the altitude z estimator
+
+  /* auto tf                     = transformBetween(fcu_frame_, world_frame_); */
+  /* msg.pose.pose.orientation.w = tf.pose.orientation.w; */
+  /* msg.pose.pose.orientation.x = tf.pose.orientation.x; */
+  /* msg.pose.pose.orientation.y = tf.pose.orientation.y; */
+  /* msg.pose.pose.orientation.z = tf.pose.orientation.z; */
   msg.pose.pose.orientation = geom_quaternion;
 
   local_hector_publisher_->publish(msg);

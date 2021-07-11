@@ -1,32 +1,61 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root version="2.3.8">
  <tabbed_widget name="Main Window" parent="main_window">
-  <Tab containers="1" tab_name="Pose">
+  <Tab containers="1" tab_name="Position">
    <Container>
-    <DockSplitter sizes="0.333333;0.333333;0.333333" orientation="-" count="3">
+    <DockSplitter orientation="-" sizes="0.333684;0.332632;0.333684" count="3">
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines">
-       <range right="30.633384" bottom="-0.004711" left="25.745229" top="0.193151"/>
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.055177" right="9.288983" left="4.351747" bottom="-0.001346"/>
        <limitY/>
-       <curve color="#1f77b4" name="/ssrc_fog_x/odometry2/local_hector/pose/position/x"/>
-       <curve color="#ff7f0e" name="/ssrc_fog_x/slam_out_pose/position/x"/>
-       <curve color="#9467bd" name="/ssrc_fog_x/odometry2/local_odom/pose/position/x"/>
+       <curve color="#1fb436" name="/ssrc_fog_x/odometry2/local_hector/pose/position/x"/>
+       <curve color="#ff110e" name="/ssrc_fog_x/odometry2/local_odom/pose/position/x"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines">
-       <range right="30.633384" bottom="-0.104328" left="25.745229" top="0.002545"/>
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.001231" right="9.288983" left="4.351747" bottom="-0.050464"/>
        <limitY/>
-       <curve color="#d62728" name="/ssrc_fog_x/odometry2/local_hector/pose/position/y"/>
-       <curve color="#f14cc1" name="/ssrc_fog_x/slam_out_pose/position/y"/>
-       <curve color="#17becf" name="/ssrc_fog_x/odometry2/local_odom/pose/position/y"/>
+       <curve color="#1ac938" name="/ssrc_fog_x/odometry2/local_hector/pose/position/y"/>
+       <curve color="#f15d4c" name="/ssrc_fog_x/odometry2/local_odom/pose/position/y"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines">
-       <range right="30.574966" bottom="-0.100000" left="25.745229" top="0.100000"/>
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.713074" right="9.288983" left="4.351747" bottom="-0.391751"/>
        <limitY/>
-       <curve color="#1ac938" name="/ssrc_fog_x/odometry2/local_hector/pose/position/z"/>
+       <curve color="#27d629" name="/ssrc_fog_x/odometry2/local_hector/pose/position/z"/>
+       <curve color="#bd6768" name="/ssrc_fog_x/odometry2/local_odom/pose/position/z"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Orientation">
+   <Container>
+    <DockSplitter orientation="-" sizes="0.333684;0.332632;0.333684" count="3">
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.409720" right="-11.150231" left="-16.150192" bottom="-0.558618"/>
+       <limitY/>
+       <curve color="#21cf17" name="/ssrc_fog_x/odometry2/local_hector/pose/orientation/roll_deg"/>
+       <curve color="#d62728" name="/ssrc_fog_x/odometry2/local_odom/pose/orientation/roll_deg"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.402974" right="-11.150231" left="-16.150192" bottom="-0.400114"/>
+       <limitY/>
+       <curve color="#22bd39" name="/ssrc_fog_x/odometry2/local_hector/pose/orientation/pitch_deg"/>
+       <curve color="#c9211a" name="/ssrc_fog_x/odometry2/local_odom/pose/orientation/pitch_deg"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range top="0.089618" right="-11.150231" left="-16.150192" bottom="-3.674347"/>
+       <limitY/>
+       <curve color="#1fb428" name="/ssrc_fog_x/odometry2/local_hector/pose/orientation/yaw_deg"/>
+       <curve color="#ff300e" name="/ssrc_fog_x/odometry2/local_odom/pose/orientation/yaw_deg"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -51,12 +80,12 @@
   <plugin ID="MQTT Subscriber"/>
   <plugin ID="ROS2 Topic Subscriber">
    <use_header_stamp value="false"/>
-   <discard_large_arrays value="true"/>
+   <discard_large_arrays value="false"/>
    <max_array_size value="true"/>
    <selected_topics>
-    <topic name="/ssrc_fog_x/slam_out_pose"/>
     <topic name="/ssrc_fog_x/odometry2/local_hector"/>
     <topic name="/ssrc_fog_x/odometry2/local_odom"/>
+    <topic name="/ssrc_fog_x/slam_out_pose"/>
    </selected_topics>
   </plugin>
   <plugin ID="UDP Server"/>

@@ -46,8 +46,10 @@ def generate_launch_description():
                     ("~/hector_pose_in", "/" + DRONE_DEVICE_ID + "/slam_out_pose"),
                     ("~/baro_in", "/" + DRONE_DEVICE_ID + "/SensorBaro_PubSubTopic"),
                     ("~/garmin_in", "/" + DRONE_DEVICE_ID + "/garmin/range"),
+                    ("~/gps_raw_in", "/" + DRONE_DEVICE_ID + "/VehicleGpsPosition_PubSubTopic"),
 
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
+                    ("~/pixhawk_odom_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
 
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
