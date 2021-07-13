@@ -81,9 +81,6 @@ LateralEstimator::LateralEstimator(
 
   // clang-format on
 
-  // set measurement mapping matrix H to zero, it will be set later during each correction step
-  lat_H_t m_H_zero = m_H_zero.Zero();
-
   // Initialize all states to 0
   const lat_x_t        x0    = lat_x_t::Zero();
   lat_P_t              P_tmp = lat_P_t::Identity();
@@ -94,7 +91,7 @@ LateralEstimator::LateralEstimator(
   const rclcpp::Time t0 = rclcpp::Time(0);
 
   // Initialize a single LKF
-  mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, m_H_zero);
+  mp_lkf = std::make_unique<lkf_lat_t>(m_A, m_B, pos_H);
 
   std::cout << "[LateralEstimator]: New LateralEstimator initialized " << std::endl;
   std::cout << "name: " << m_estimator_name << std::endl;
@@ -234,7 +231,7 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
-      std::cerr << "[Odometry]: LKF correction step failed: " << e.what();
+      std::cerr << "[LateralEstimator]: LKF correction step failed: " << e.what();
     }
   }
 
@@ -276,8 +273,10 @@ bool LateralEstimator::getState(int state_id, double &state) {
 
   /*  //{ sanity checks */
 
-  if (!m_is_initialized)
+  if (!m_is_initialized) {
+    std::cerr << "[LateralEstimator]: Not initialized" << std::endl;
     return false;
+  }
 
   // Check for NaNs
   if (!std::isfinite(state_id)) {

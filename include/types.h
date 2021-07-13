@@ -33,6 +33,14 @@
 #define STATE_VEL 1
 #define STATE_ACC 2
 
+// lateral model states
+#define LAT_POS_X 0
+#define LAT_POS_Y 1
+#define LAT_VEL_X 2
+#define LAT_VEL_Y 3
+#define LAT_ACC_X 4
+#define LAT_ACC_Y 5
+
 // altitude state corrections
 #define ALT_GARMIN 0
 #define ALT_BARO 1

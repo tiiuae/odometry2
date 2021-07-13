@@ -111,14 +111,15 @@ private:
   // GPS
   std::atomic<float> pos_gps_[3];
   std::atomic<float> ori_gps_[4];
-  /* std::mutex mutex_gps_; */
 
-  // Hector
+  // HECTOR
   std::atomic<float> pos_hector_[2];
   std::atomic<float> ori_hector_[4];
-  /* std::mutex mutex_hector_; */
-  int    c_hector_init_msgs_  = 0;
-  double hector_hdg_previous_ = 0.0;
+  std::atomic<float> pos_tf_hector_[3];
+  std::atomic<float> ori_tf_hector_[3];
+  int                c_hector_init_msgs_  = 0;
+  double             hector_hdg_previous_ = 0.0;
+
 
   // Vehicle local position
   std::atomic<float> pos_local_[3];
@@ -316,7 +317,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* altitude process covariance (Q matrix) //{ */
 
-  alt_Q_t Q_alt;
+  alt_Q_t Q_alt = alt_Q_t::Identity();
   double  alt_pos, alt_vel, alt_acc;
   parse_param("altitude.process_covariance.pos", alt_pos);
   Q_alt(STATE_POS, STATE_POS) *= alt_pos;
@@ -383,11 +384,14 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   lat_Q_t Q_lat = lat_Q_t::Identity();
   double  lat_pos, lat_vel, lat_acc;
   parse_param("lateral.process_covariance.pos", lat_pos);
-  Q_lat(STATE_POS, STATE_POS) *= lat_pos;
+  Q_lat(LAT_POS_X, LAT_POS_X) *= lat_pos;
+  Q_lat(LAT_POS_Y, LAT_POS_Y) *= lat_pos;
   parse_param("lateral.process_covariance.vel", lat_vel);
-  Q_lat(STATE_VEL, STATE_VEL) *= lat_vel;
+  Q_lat(LAT_VEL_X, LAT_VEL_X) *= lat_vel;
+  Q_lat(LAT_VEL_Y, LAT_VEL_Y) *= lat_vel;
   parse_param("lateral.process_covariance.acc", lat_acc);
-  Q_lat(STATE_ACC, STATE_ACC) *= lat_acc;
+  Q_lat(LAT_ACC_X, LAT_ACC_X) *= lat_acc;
+  Q_lat(LAT_ACC_Y, LAT_ACC_Y) *= lat_acc;
 
   //}
 
@@ -543,18 +547,14 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     return;
   }
 
-  {
-    /* std::scoped_lock lock(mutex_hector_); */
-    pos_hector_[0] = msg->pose.position.x;
-    pos_hector_[1] = msg->pose.position.y;
+  pos_hector_[0] = msg->pose.position.x;
+  pos_hector_[1] = msg->pose.position.y;
 
-    ori_hector_[0] = msg->pose.orientation.w;
-    ori_hector_[1] = msg->pose.orientation.x;
-    ori_hector_[2] = msg->pose.orientation.y;
-    ori_hector_[3] = msg->pose.orientation.z;
-  }
+  ori_hector_[0] = msg->pose.orientation.w;
+  ori_hector_[1] = msg->pose.orientation.x;
+  ori_hector_[2] = msg->pose.orientation.y;
+  ori_hector_[3] = msg->pose.orientation.z;
 
-  getting_hector_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
 
   if (!std::isfinite(msg->pose.position.x)) {
@@ -573,6 +573,12 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   if (c_hector_init_msgs_++ < 10) {
     RCLCPP_INFO(this->get_logger(), "[%s]: Hector pose #%d - x: %f y: %f", this->get_name(), c_hector_init_msgs_, msg->pose.position.x, msg->pose.position.y);
     return;
+  }
+
+  /* Setup variables for tfs */
+  if (!getting_hector_) {
+    /* pos_tf_hector_ = pos_gps; */
+    /* ori_tf_hector_ = ori_gps_; */
   }
 
   /* get heading from hector orientation quaternion //{*/
@@ -595,7 +601,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   hector_lat_correction_[1]  = msg->pose.position.y;
   got_hector_lat_correction_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector lateral corrections", this->get_name());
-
+  getting_hector_ = true;
   /*//}*/
 }
 //}
@@ -832,6 +838,19 @@ void Odometry2::publishTF() {
 
   {
     std::scoped_lock lock(mutex_estimator_source_);
+
+    /* q.setRPY(M_PI, 0, M_PI / 2); */
+    /* tf1.header.stamp            = this->get_clock()->now(); */
+    /* tf1.header.frame_id         = ned_origin_frame_; */
+    /* tf1.child_frame_id          = hector_origin_frame_; */
+    /* tf1.transform.translation.x = pos_gps_[0]; */
+    /* tf1.transform.translation.y = pos_gps_[1]; */
+    /* tf1.transform.translation.z = pos_gps_[2]; */
+    /* tf1.transform.rotation.w    = ori_gps_[0]; */
+    /* tf1.transform.rotation.x    = ori_gps_[1]; */
+    /* tf1.transform.rotation.y    = ori_gps_[2]; */
+    /* tf1.transform.rotation.z    = ori_gps_[3]; */
+    /* tf_broadcaster_->sendTransform(tf1); */
 
     /* GPS //{ */
     if (estimator_source_.type == fog_msgs::msg::EstimatorType::GPS) {
@@ -1193,21 +1212,21 @@ void Odometry2::updateEstimators() {
   Eigen::Matrix3d                mat;
   Eigen::Quaterniond             quaternion;
   geometry_msgs::msg::Quaternion geom_quaternion;
-  tf2::Quaternion tf2_quaternion;
+  tf2::Quaternion                tf2_quaternion;
 
   hector_hdg_estimator_->getState(0, hdg);
 
   /* double mavros_hdg = 0; */
   // Obtain mavros orientation
   try {
-  mavros_hdg = odometry_utils::getHeading(tf2::toMsg(mavros_orientation_));
+    mavros_hdg = odometry_utils::getHeading(tf2::toMsg(mavros_orientation_));
   }
   catch (...) {
     RCLCPP_WARN(this->get_logger(), "[%s]: failed to getHeading() from mavros_orientation", this->get_name());
   }
 
   // Build rotation matrix from difference between new heading and mavros heading
-  mat        = Eigen::AngleAxisd(hdg - mavros_hdg, Eigen::Vector3d::UnitZ());
+  mat = Eigen::AngleAxisd(hdg - mavros_hdg, Eigen::Vector3d::UnitZ());
 
   quaternion = Eigen::Quaterniond(mat);
 
@@ -1227,6 +1246,7 @@ void Odometry2::updateEstimators() {
   // lateral
   double pos_x, pos_y, vel_x, vel_y, acc_x, acc_y;
 
+    RCLCPP_WARN(this->get_logger(), "[%s]: gettting states", this->get_name());
   hector_lat_estimator_->getState(0, pos_x);
   hector_lat_estimator_->getState(1, pos_y);
   hector_lat_estimator_->getState(2, vel_x);
