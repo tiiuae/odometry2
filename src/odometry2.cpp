@@ -590,6 +590,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     // unwrap heading to prevent discrete jumps
     hdg_hector                 = geometry::radians::unwrap(hdg_hector, hector_hdg_previous_);
     hector_hdg_previous_       = hdg_hector;
+    hector_hdg_correction_     = hdg_hector;
     got_hector_hdg_correction_ = true;
     RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector heading corrections", this->get_name());
   }
@@ -1216,6 +1217,8 @@ void Odometry2::updateEstimators() {
 
   hector_hdg_estimator_->getState(0, hdg);
 
+  RCLCPP_INFO(this->get_logger(), " heading: %f", hdg);
+
   /* double mavros_hdg = 0; */
   // Obtain mavros orientation
   try {
@@ -1246,7 +1249,6 @@ void Odometry2::updateEstimators() {
   // lateral
   double pos_x, pos_y, vel_x, vel_y, acc_x, acc_y;
 
-    RCLCPP_WARN(this->get_logger(), "[%s]: gettting states", this->get_name());
   hector_lat_estimator_->getState(0, pos_x);
   hector_lat_estimator_->getState(1, pos_y);
   hector_lat_estimator_->getState(2, vel_x);
