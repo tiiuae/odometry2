@@ -43,6 +43,7 @@
 #include <sensor_msgs/msg/range.hpp>
 
 #include <std_msgs/msg/color_rgba.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include <lib/median_filter.h>
@@ -179,6 +180,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr              local_hector_publisher_;
   rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             pixhawk_odom_publisher_;
   rclcpp::Publisher<px4_msgs::msg::VehicleVisualOdometry>::SharedPtr visual_odom_publisher_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                test_string_;
 
   // subscribers
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr           timesync_subscriber_;
@@ -233,6 +235,11 @@ private:
   void                             odometryRoutine(void);
   rclcpp::Time                     time_odometry_timer_prev_;
   std::atomic_bool                 time_odometry_timer_set_ = false;
+
+  // threads if timers do not work
+  std::thread  odometry_thread_;
+  void         odometryThreadRoutine(void);
+  rclcpp::Rate odometry_thread_rate_ = rclcpp::Rate(100);
 
   // utils
   template <class T>
@@ -415,6 +422,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   local_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
   pixhawk_odom_publisher_ = this->create_publisher<px4_msgs::msg::SensorGps>("~/pixhawk_odom_out", 10);
   visual_odom_publisher_  = this->create_publisher<px4_msgs::msg::VehicleVisualOdometry>("~/visual_odom_out", 10);
+  test_string_            = this->create_publisher<std_msgs::msg::String>("~/string_out", 10);
 
   // subscribers
   timesync_subscriber_ =
@@ -448,6 +456,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_buffer_->setUsingDedicatedThread(true);
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
+
+  odometry_thread_ = std::thread(&Odometry2::odometryThreadRoutine, this);
+  odometry_thread_.detach();
 
   is_initialized_ = true;
   RCLCPP_INFO(this->get_logger(), "[%s]: Initialized", this->get_name());
@@ -791,23 +802,56 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 }
 //}
 
-/* odometryRoutine //{ */
-void Odometry2::odometryRoutine(void) {
-  if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) {
-    callbacks_enabled_ = true;
-    odom_ready_        = true;
-    if (static_tf_broadcaster_ == nullptr) {
-      static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this());
-      publishStaticTF();
-      return;
+
+/* odometryThreadRoutine //{ */
+void Odometry2::odometryThreadRoutine(void) {
+  while (rclcpp::ok()) {
+    /* RCLCPP_INFO(this->get_logger(), "test 1"); */
+    if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) {
+      /* RCLCPP_INFO(this->get_logger(), "test 2"); */
+      callbacks_enabled_ = true;
+      odom_ready_        = true;
+      if (static_tf_broadcaster_ == nullptr) {
+        static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this());
+        publishStaticTF();
+        /* return; */
+      }
+      /* RCLCPP_INFO(this->get_logger(), "test 3"); */
+
+      updateEstimators();
+
+      publishTF();
+      publishLocalOdom();
+      publishPixhawkOdom();
+
+      /* RCLCPP_INFO(this->get_logger(), "test 4"); */
     }
 
-    updateEstimators();
+    test_string_->publish(std_msgs::msg::String());
 
-    publishTF();
-    publishLocalOdom();
-    publishPixhawkOdom();
+    odometry_thread_rate_.sleep();
   }
+}
+//}
+
+
+/* odometryRoutine //{ */
+void Odometry2::odometryRoutine(void) {
+  /* if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) { */
+  /*   callbacks_enabled_ = true; */
+  /*   odom_ready_        = true; */
+  /*   if (static_tf_broadcaster_ == nullptr) { */
+  /*     static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this()); */
+  /*     publishStaticTF(); */
+  /*     return; */
+  /*   } */
+
+  /*   updateEstimators(); */
+
+  /*   publishTF(); */
+  /*   publishLocalOdom(); */
+  /*   publishPixhawkOdom(); */
+  /* } */
 }
 //}
 
@@ -1119,8 +1163,8 @@ void Odometry2::updateEstimators() {
 
   // calculate time since last estimators update
   double       dt;
-  rclcpp::Time time_now     = this->get_clock()->now();
-  dt                        = (time_now - time_odometry_timer_prev_).nanoseconds();
+  rclcpp::Time time_now = this->get_clock()->now();
+  dt                    = (time_now - time_odometry_timer_prev_).nanoseconds();
 
   if (time_now <= time_odometry_timer_prev_) {
     RCLCPP_WARN(this->get_logger(), "[%s]: odometry timer dt=%f, skipping estimator update.", this->get_name(), dt);
