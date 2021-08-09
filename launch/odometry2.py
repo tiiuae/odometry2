@@ -41,7 +41,7 @@ def generate_launch_description():
                     ("~/local_hector_out", "~/local_hector"),
 
                     ("~/timesync_in", "/" + DRONE_DEVICE_ID + "/Timesync_PubSubTopic"),
-                    ("~/gps_in", "/" + DRONE_DEVICE_ID + "/VehicleGlobalPosition_PubSubTopic"),
+                    ("~/gps_in", "/" + DRONE_DEVICE_ID + "/VehicleGpsPosition_PubSubTopic"),
                     ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
                     ("~/hector_pose_in", "/" + DRONE_DEVICE_ID + "/slam_out_pose"),
                     ("~/baro_in", "/" + DRONE_DEVICE_ID + "/SensorBaro_PubSubTopic"),
@@ -49,7 +49,8 @@ def generate_launch_description():
                     ("~/gps_raw_in", "/" + DRONE_DEVICE_ID + "/VehicleGpsPosition_PubSubTopic"),
 
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
-                    ("~/pixhawk_odom_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
+                    # ("~/pixhawk_odom_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
+                    ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
 
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
