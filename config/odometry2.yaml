@@ -46,10 +46,10 @@ param_namespace:
   lateral:
 
     measurement_covariance: # the covariance used when this measurement is used as correction in Kalman filter
-      hector: 1.0
+      hector: 10.0
 
     process_covariance: # the process covariance used in the prediction step of the Kalman filter
-      pos: 0.001
-      vel: 0.01
-      acc: 0.01
+      pos: 0.01
+      vel: 0.1
+      acc: 0.1
 # # #}
