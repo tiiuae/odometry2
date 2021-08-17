@@ -1,3 +1,5 @@
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
 #include <mutex>
@@ -127,6 +129,7 @@ private:
   px4_msgs::msg::VehicleVisualOdometry visual_odometry_;
   std::atomic<unsigned long long>      timestamp_;
   std::atomic<std::int64_t>            timestamp_raw_;
+  std::chrono::time_point<std::chrono::system_clock> time_sync_time_;
 
 
   // Vehicle local position
@@ -230,11 +233,11 @@ private:
   std_msgs::msg::ColorRGBA        generateColor(const double r, const double g, const double b, const double a);
 
   // timers
-  rclcpp::CallbackGroup::SharedPtr callback_group_;
-  rclcpp::TimerBase::SharedPtr     odometry_timer_;
-  void                             odometryRoutine(void);
-  rclcpp::Time                     time_odometry_timer_prev_;
-  std::atomic_bool                 time_odometry_timer_set_ = false;
+  rclcpp::CallbackGroup::SharedPtr                   callback_group_;
+  rclcpp::TimerBase::SharedPtr                       odometry_timer_;
+  void                                               odometryRoutine(void);
+  std::chrono::time_point<std::chrono::system_clock> time_odometry_timer_prev_;
+  std::atomic_bool                                   time_odometry_timer_set_ = false;
 
   // threads if timers do not work
   std::thread  odometry_thread_;
@@ -470,9 +473,10 @@ void Odometry2::timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg) {
   if (!is_initialized_) {
     return;
   }
-  timestamp_.store(msg->timestamp);
   if (msg->sys_id == 1) {
+    timestamp_.store(msg->timestamp);
     timestamp_raw_.store(msg->tc1);
+    time_sync_time_ = std::chrono::system_clock::now();
   }
 }
 //}
@@ -1157,20 +1161,16 @@ void Odometry2::setupEstimator(const std::string &type) {
 void Odometry2::updateEstimators() {
 
   if (!time_odometry_timer_set_) {
-    time_odometry_timer_prev_ = this->get_clock()->now();
+    time_odometry_timer_prev_ = std::chrono::system_clock::now();
     time_odometry_timer_set_  = true;
   }
 
   // calculate time since last estimators update
-  double       dt;
-  rclcpp::Time time_now = this->get_clock()->now();
-  dt                    = (time_now - time_odometry_timer_prev_).nanoseconds();
+  std::chrono::time_point       time_now = std::chrono::system_clock::now();
+  std::chrono::duration<double> dt       = time_now - time_odometry_timer_prev_;
 
-  if (time_now <= time_odometry_timer_prev_) {
-    RCLCPP_WARN(this->get_logger(), "[%s]: odometry timer dt=%f, skipping estimator update.", this->get_name(), dt);
-    RCLCPP_WARN(this->get_logger(), "[%s]: time_now %f", this->get_name(), time_now.nanoseconds());
-    RCLCPP_WARN(this->get_logger(), "[%s]: time_odometry_timer_prev_ %f", this->get_name(), time_odometry_timer_prev_.nanoseconds());
-
+  if (dt.count() <= 0) {
+    RCLCPP_WARN(this->get_logger(), "[%s]: odometry timer dt=%f, skipping estimator update.", this->get_name(), dt.count());
     return;
   }
 
@@ -1187,7 +1187,7 @@ void Odometry2::updateEstimators() {
   }
 
   /* TODO: add control input to prediction? */
-  garmin_alt_estimator_->doPrediction(0.0, dt);
+  garmin_alt_estimator_->doPrediction(0.0, dt.count());
 
   //}
 
@@ -1202,14 +1202,14 @@ void Odometry2::updateEstimators() {
   }
 
   /* TODO: add control input to prediction? */
-  hector_hdg_estimator_->doPrediction(0.0, dt);
+  hector_hdg_estimator_->doPrediction(0.0, dt.count());
 
   if (got_hector_lat_correction_) {
     hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR);
   }
 
   /* TODO: add control input to prediction? */
-  hector_lat_estimator_->doPrediction(0.0, 0.0, dt);
+  hector_lat_estimator_->doPrediction(0.0, 0.0, dt.count());
 
   //}
 
@@ -1280,40 +1280,64 @@ void Odometry2::updateEstimators() {
   garmin_alt_estimator_->getState(0, pos_z);
   garmin_alt_estimator_->getState(1, vel_z);
 
-  msg.pose.pose.position.x = pos_x;
-  msg.pose.pose.position.y = pos_y;
-  msg.pose.pose.position.z = pos_z;
-  msg.twist.twist.linear.x = vel_x;
-  msg.twist.twist.linear.y = vel_y;
-  msg.twist.twist.linear.z - vel_z;
+
+  msg.pose.pose.position.x = pos_y;
+  msg.pose.pose.position.y = pos_x;
+  msg.pose.pose.position.z = -pos_z;
+  msg.twist.twist.linear.x = vel_y;
+  msg.twist.twist.linear.y = vel_x;
+  msg.twist.twist.linear.z = vel_z;
 
   /* auto tf                     = transformBetween(fcu_frame_, world_frame_); */
   /* msg.pose.pose.orientation.w = tf.pose.orientation.w; */
   /* msg.pose.pose.orientation.x = tf.pose.orientation.x; */
   /* msg.pose.pose.orientation.y = tf.pose.orientation.y; */
   /* msg.pose.pose.orientation.z = tf.pose.orientation.z; */
+
+  geom_quaternion.x         = mavros_orientation_.getW();
+  geom_quaternion.y         = mavros_orientation_.getX();
+  geom_quaternion.z         = mavros_orientation_.getY();
+  geom_quaternion.w         = mavros_orientation_.getZ();
   msg.pose.pose.orientation = geom_quaternion;
 
   local_hector_publisher_->publish(msg);
   /*//}*/
 
   // publish visual odometry//{
+  
+  std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now()-time_sync_time_;
 
-  visual_odometry_.timestamp        = timestamp_;
-  visual_odometry_.timestamp_sample = timestamp_raw_;
+  visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000 ;
+  visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
 
-  visual_odometry_.x = pos_x;
-  visual_odometry_.y = pos_y;
-  visual_odometry_.z = pos_z;
+  visual_odometry_.x = pos_y;
+  visual_odometry_.y = pos_x;
+  visual_odometry_.z = -pos_z;
 
-  visual_odometry_.q[0] = geom_quaternion.w;
-  visual_odometry_.q[1] = geom_quaternion.x;
-  visual_odometry_.q[2] = geom_quaternion.y;
-  visual_odometry_.q[3] = geom_quaternion.z;
+  visual_odometry_.q[0] = mavros_orientation_.getW();
+  visual_odometry_.q[1] = mavros_orientation_.getX();
+  visual_odometry_.q[2] = mavros_orientation_.getY();
+  visual_odometry_.q[3] = mavros_orientation_.getZ();
 
-  visual_odometry_.vx = vel_x;
-  visual_odometry_.vy = vel_y;
+  /* visual_odometry_.q[0] = geom_quaternion.w; */
+  /* visual_odometry_.q[1] = geom_quaternion.x; */
+  /* visual_odometry_.q[2] = geom_quaternion.y; */
+  /* visual_odometry_.q[3] = geom_quaternion.z; */
+
+  std::fill(visual_odometry_.q_offset.begin(), visual_odometry_.q_offset.end(), NAN);
+
+  std::fill(visual_odometry_.pose_covariance.begin(), visual_odometry_.pose_covariance.end(), NAN);
+
+  visual_odometry_.vx = vel_y;
+  visual_odometry_.vy = vel_x;
   visual_odometry_.vz = vel_z;
+
+  visual_odometry_.rollspeed  = NAN;
+  visual_odometry_.pitchspeed = NAN;
+  visual_odometry_.yawspeed   = NAN;
+
+  std::fill(visual_odometry_.velocity_covariance.begin(), visual_odometry_.velocity_covariance.end(), NAN);
+
 
   visual_odom_publisher_->publish(visual_odometry_);
 
