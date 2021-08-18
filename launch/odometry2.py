@@ -49,7 +49,7 @@ def generate_launch_description():
                     ("~/gps_raw_in", "/" + DRONE_DEVICE_ID + "/VehicleGpsPosition_PubSubTopic"),
 
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
-                    # ("~/pixhawk_odom_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
+                    ("~/sensor_gps_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
                     ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
 
                     ("~/get_origin", "~/get_origin"),

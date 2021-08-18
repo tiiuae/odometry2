@@ -107,11 +107,13 @@ private:
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 
-  // FAKE GPS
-  geographic_msgs::msg::GeoPoint point_;
-  geodesy::UTMPoint              home_;
-  px4_msgs::msg::SensorGps       sensor_gps_;
-  std::mutex                     mutex_sensor_gps_;
+  // GPS SENSOR
+  std::thread              gps_sensor_thread_;
+  void                     gpsSensorThreadRoutine(void);
+  rclcpp::Rate             gps_sensor_thread_rate_ = rclcpp::Rate(5);
+  px4_msgs::msg::SensorGps gps_sensor_;
+  std::mutex               mutex_gps_sensor_;
+  std::atomic_int          gps_sensor_publisher_counter_ = 0;
 
   // GPS
   std::atomic<float> pos_gps_[3];
@@ -126,9 +128,9 @@ private:
   double             hector_hdg_previous_ = 0.0;
 
   // VISION SENSOR
-  px4_msgs::msg::VehicleVisualOdometry visual_odometry_;
-  std::atomic<unsigned long long>      timestamp_;
-  std::atomic<std::int64_t>            timestamp_raw_;
+  px4_msgs::msg::VehicleVisualOdometry               visual_odometry_;
+  std::atomic<unsigned long long>                    timestamp_;
+  std::atomic<std::int64_t>                          timestamp_raw_;
   std::chrono::time_point<std::chrono::system_clock> time_sync_time_;
 
 
@@ -179,17 +181,16 @@ private:
   std::vector<std::string>     estimator_type_names_;
 
   // publishers
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr              local_odom_publisher_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr              local_hector_publisher_;
-  rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             pixhawk_odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_hector_publisher_;
+  /* rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             pixhawk_odom_publisher_; */
   rclcpp::Publisher<px4_msgs::msg::VehicleVisualOdometry>::SharedPtr visual_odom_publisher_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                test_string_;
+  rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             gps_sensor_publisher_;
 
   // subscribers
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr           timesync_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleGpsPosition>::SharedPtr gps_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr    pixhawk_odom_subscriber_;
-  rclcpp::Subscription<px4_msgs::msg::VehicleGpsPosition>::SharedPtr gps_raw_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr         baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
   rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr           garmin_subscriber_;
@@ -198,7 +199,6 @@ private:
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
   void gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg);
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
-  void gpsRawCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg);
   void hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg);
   void baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg);
   void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg);
@@ -226,7 +226,6 @@ private:
   void publishTF();
   void publishStaticTF();
   void publishLocalOdom();
-  void publishPixhawkOdom();
   void updateEstimators();
 
   geometry_msgs::msg::PoseStamped transformBetween(std::string frame_from, std::string frame_to);
@@ -256,9 +255,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   RCLCPP_INFO(this->get_logger(), "[%s]: Initializing...", this->get_name());
   ref.latitude_deg = 0.0;
   ref.latitude_deg = 0.0;
-
-  // Initialize fake gps
-  point_ = geographic_msgs::msg::GeoPoint();
 
   // Getting
   try {
@@ -423,9 +419,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // publishers
   local_odom_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
   local_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
-  pixhawk_odom_publisher_ = this->create_publisher<px4_msgs::msg::SensorGps>("~/pixhawk_odom_out", 10);
-  visual_odom_publisher_  = this->create_publisher<px4_msgs::msg::VehicleVisualOdometry>("~/visual_odom_out", 10);
-  test_string_            = this->create_publisher<std_msgs::msg::String>("~/string_out", 10);
+  /* pixhawk_odom_publisher_ = this->create_publisher<px4_msgs::msg::SensorGps>("~/pixhawk_odom_out", 10); */
+  visual_odom_publisher_ = this->create_publisher<px4_msgs::msg::VehicleVisualOdometry>("~/visual_odom_out", 10);
+  gps_sensor_publisher_  = this->create_publisher<px4_msgs::msg::SensorGps>("~/sensor_gps_out", 10);
 
   // subscribers
   timesync_subscriber_ =
@@ -434,8 +430,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
       this->create_subscription<px4_msgs::msg::VehicleGpsPosition>("~/gps_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::gpsCallback, this, _1));
   pixhawk_odom_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
                                                                                        std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
-  gps_raw_subscriber_      = this->create_subscription<px4_msgs::msg::VehicleGpsPosition>("~/gps_raw_in", rclcpp::SystemDefaultsQoS(),
-                                                                                     std::bind(&Odometry2::gpsRawCallback, this, _1));
   hector_pose_subscriber_  = this->create_subscription<geometry_msgs::msg::PoseStamped>("~/hector_pose_in", rclcpp::SystemDefaultsQoS(),
                                                                                        std::bind(&Odometry2::hectorPoseCallback, this, _1));
   garmin_subscriber_ =
@@ -462,6 +456,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   odometry_thread_ = std::thread(&Odometry2::odometryThreadRoutine, this);
   odometry_thread_.detach();
+
+  gps_sensor_thread_ = std::thread(&Odometry2::gpsSensorThreadRoutine, this);
+  gps_sensor_thread_.detach();
 
   is_initialized_ = true;
   RCLCPP_INFO(this->get_logger(), "[%s]: Initialized", this->get_name());
@@ -491,11 +488,6 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
   if (!getting_gps_) {
     ref.latitude_deg  = msg->lat * 1e-7;
     ref.longitude_deg = msg->lon * 1e-7;
-    /* ref.latitude_deg  = msg->lat; */
-    /* ref.longitude_deg = msg->lon; */
-
-    point_.latitude  = msg->lat;
-    point_.longitude = msg->lon;
 
     getting_gps_ = true;
     RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS!", this->get_name());
@@ -533,41 +525,47 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 }
 //}
 
-/* gpsRawCallback //{ */
-void Odometry2::gpsRawCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg) {
-  if (!is_initialized_) {
-    return;
+/* gpsSensorThreadRoutine //{ */
+void Odometry2::gpsSensorThreadRoutine(void) {
+  while (rclcpp::ok()) {
+    if (is_initialized_) {
+      std::scoped_lock lock(mutex_gps_sensor_);
+
+      std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now() - time_sync_time_;
+
+      gps_sensor_.timestamp      = timestamp_ + diff.count() / 1000;
+      gps_sensor_.lat            = 0;
+      gps_sensor_.lon            = 0;
+      gps_sensor_.alt            = 100;
+      gps_sensor_.s_variance_m_s = 0;
+
+      gps_sensor_.fix_type = 3;
+      gps_sensor_.eph      = 1.0;
+      gps_sensor_.epv      = 1.0;
+      gps_sensor_.hdop     = 0.0;
+      gps_sensor_.vdop     = 0.0;
+
+      gps_sensor_.vel_m_s       = 0;
+      gps_sensor_.vel_n_m_s     = 0;
+      gps_sensor_.vel_e_m_s     = 0;
+      gps_sensor_.vel_d_m_s     = 0;
+      gps_sensor_.cog_rad       = 0;
+      gps_sensor_.vel_ned_valid = 0;
+
+      gps_sensor_.time_utc_usec = gps_sensor_.timestamp;
+
+      gps_sensor_.satellites_used = 10;
+      gps_sensor_.heading         = 0;
+      gps_sensor_.heading_offset  = 0;
+
+      gps_sensor_publisher_->publish(gps_sensor_);
+      gps_sensor_publisher_counter_++;
+      if (gps_sensor_publisher_counter_ > 100) {
+        return;
+      }
+    }
+    gps_sensor_thread_rate_.sleep();
   }
-
-  {
-    std::scoped_lock lock(mutex_sensor_gps_);
-    sensor_gps_.timestamp      = msg->timestamp;
-    sensor_gps_.lat            = msg->lat;
-    sensor_gps_.lon            = msg->lon;
-    sensor_gps_.alt            = msg->alt;
-    sensor_gps_.s_variance_m_s = msg->s_variance_m_s;
-
-    sensor_gps_.fix_type = msg->fix_type;
-    sensor_gps_.eph      = msg->eph;
-    sensor_gps_.epv      = msg->epv;
-    sensor_gps_.hdop     = msg->hdop;
-    sensor_gps_.vdop     = msg->vdop;
-
-    sensor_gps_.vel_m_s       = msg->vel_m_s;
-    sensor_gps_.vel_n_m_s     = msg->vel_n_m_s;
-    sensor_gps_.vel_e_m_s     = msg->vel_e_m_s;
-    sensor_gps_.vel_d_m_s     = msg->vel_d_m_s;
-    sensor_gps_.cog_rad       = msg->cog_rad;
-    sensor_gps_.vel_ned_valid = msg->vel_ned_valid;
-
-    sensor_gps_.time_utc_usec = msg->time_utc_usec;
-
-    sensor_gps_.satellites_used = msg->satellites_used;
-    sensor_gps_.heading         = msg->heading;
-    sensor_gps_.heading_offset  = msg->heading_offset;
-  }
-
-  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting raw GPS!", this->get_name());
 }
 //}
 
@@ -806,38 +804,27 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 }
 //}
 
-
 /* odometryThreadRoutine //{ */
 void Odometry2::odometryThreadRoutine(void) {
   while (rclcpp::ok()) {
-    /* RCLCPP_INFO(this->get_logger(), "test 1"); */
     if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) {
-      /* RCLCPP_INFO(this->get_logger(), "test 2"); */
       callbacks_enabled_ = true;
       odom_ready_        = true;
       if (static_tf_broadcaster_ == nullptr) {
         static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this());
         publishStaticTF();
-        /* return; */
       }
-      /* RCLCPP_INFO(this->get_logger(), "test 3"); */
 
       updateEstimators();
 
       publishTF();
       publishLocalOdom();
-      publishPixhawkOdom();
-
-      /* RCLCPP_INFO(this->get_logger(), "test 4"); */
     }
-
-    test_string_->publish(std_msgs::msg::String());
 
     odometry_thread_rate_.sleep();
   }
 }
 //}
-
 
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
@@ -854,7 +841,6 @@ void Odometry2::odometryRoutine(void) {
 
   /*   publishTF(); */
   /*   publishLocalOdom(); */
-  /*   publishPixhawkOdom(); */
   /* } */
 }
 //}
@@ -1002,22 +988,6 @@ void Odometry2::publishLocalOdom() {
   msg.pose.pose.orientation.y = tf.pose.orientation.y;
   msg.pose.pose.orientation.z = tf.pose.orientation.z;
   local_odom_publisher_->publish(msg);
-}
-//}
-
-/* publishPixhawkOdom //{*/
-void Odometry2::publishPixhawkOdom() {
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
-    if (estimator_source_.type == fog_msgs::msg::EstimatorType::HECTOR) {
-      // TODO:: Used to serve to use GPS as a data into Pixhawk. Now using vision type
-    }
-  }
-
-  {
-    std::scoped_lock lock(mutex_sensor_gps_);
-    pixhawk_odom_publisher_->publish(sensor_gps_);
-  }
 }
 //}
 
@@ -1183,7 +1153,7 @@ void Odometry2::updateEstimators() {
   }
 
   if (got_baro_alt_correction_) {
-    garmin_alt_estimator_->doCorrection(baro_alt_correction_, ALT_BARO);
+    /* garmin_alt_estimator_->doCorrection(baro_alt_correction_, ALT_BARO); TODO:: Missing baro estimator */
   }
 
   /* TODO: add control input to prediction? */
@@ -1286,7 +1256,7 @@ void Odometry2::updateEstimators() {
   msg.pose.pose.position.z = -pos_z;
   msg.twist.twist.linear.x = vel_y;
   msg.twist.twist.linear.y = vel_x;
-  msg.twist.twist.linear.z = vel_z;
+  msg.twist.twist.linear.z = -vel_z;
 
   /* auto tf                     = transformBetween(fcu_frame_, world_frame_); */
   /* msg.pose.pose.orientation.w = tf.pose.orientation.w; */
@@ -1304,10 +1274,10 @@ void Odometry2::updateEstimators() {
   /*//}*/
 
   // publish visual odometry//{
-  
-  std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now()-time_sync_time_;
 
-  visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000 ;
+  std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now() - time_sync_time_;
+
+  visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000;
   visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
 
   visual_odometry_.x = pos_y;
@@ -1330,7 +1300,7 @@ void Odometry2::updateEstimators() {
 
   visual_odometry_.vx = vel_y;
   visual_odometry_.vy = vel_x;
-  visual_odometry_.vz = vel_z;
+  visual_odometry_.vz = -vel_z;
 
   visual_odometry_.rollspeed  = NAN;
   visual_odometry_.pitchspeed = NAN;
