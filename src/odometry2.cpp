@@ -621,6 +621,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     hector_hdg_correction_     = hdg_hector;
     got_hector_hdg_correction_ = true;
     RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector heading corrections", this->get_name());
+    /* RCLCPP_INFO(this->get_logger(), "[Odometry2]: hector hdg: %f", hdg_hector); */
   }
   catch (...) {
     RCLCPP_WARN(this->get_logger(), "[%s]: failed to getHeading() from hector orientation, dropping this correction", this->get_name());
@@ -1167,9 +1168,9 @@ void Odometry2::updateEstimators() {
     hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_HECTOR);
   }
 
-  if (got_gyro_hdg_correction_) {
-    hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_GYRO);
-  }
+  /* if (got_gyro_hdg_correction_) { */
+  /*   hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_GYRO); */
+  /* } */
 
   /* TODO: add control input to prediction? */
   hector_hdg_estimator_->doPrediction(0.0, dt.count());
@@ -1264,10 +1265,10 @@ void Odometry2::updateEstimators() {
   /* msg.pose.pose.orientation.y = tf.pose.orientation.y; */
   /* msg.pose.pose.orientation.z = tf.pose.orientation.z; */
 
-  geom_quaternion.x         = mavros_orientation_.getW();
-  geom_quaternion.y         = mavros_orientation_.getX();
-  geom_quaternion.z         = mavros_orientation_.getY();
-  geom_quaternion.w         = mavros_orientation_.getZ();
+  geom_quaternion.w         = mavros_orientation_.getW();
+  geom_quaternion.x         = mavros_orientation_.getX();
+  geom_quaternion.y         = mavros_orientation_.getY();
+  geom_quaternion.z         = mavros_orientation_.getZ();
   msg.pose.pose.orientation = geom_quaternion;
 
   local_hector_publisher_->publish(msg);
