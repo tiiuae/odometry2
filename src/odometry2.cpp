@@ -116,16 +116,16 @@ private:
   std::atomic_int          gps_sensor_publisher_counter_ = 0;
 
   // GPS
-  std::atomic<float> pos_gps_[3];
-  std::atomic<float> ori_gps_[4];
+  float pos_gps_[3];
+  float ori_gps_[4];
 
   // HECTOR
-  std::atomic<float> pos_hector_[2];
-  std::atomic<float> ori_hector_[4];
-  std::atomic<float> pos_tf_hector_[3];
-  std::atomic<float> ori_tf_hector_[3];
-  int                c_hector_init_msgs_  = 0;
-  double             hector_hdg_previous_ = 0.0;
+  float  pos_hector_[3];
+  float  ori_hector_[4];
+  float  pos_orig_hector_[3];
+  float  ori_orig_hector_[4];
+  int    c_hector_init_msgs_  = 0;
+  double hector_hdg_previous_ = 0.0;
 
   // VISION SENSOR
   px4_msgs::msg::VehicleVisualOdometry               visual_odometry_;
@@ -575,14 +575,6 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     return;
   }
 
-  pos_hector_[0] = msg->pose.position.x;
-  pos_hector_[1] = msg->pose.position.y;
-
-  ori_hector_[0] = msg->pose.orientation.w;
-  ori_hector_[1] = msg->pose.orientation.x;
-  ori_hector_[2] = msg->pose.orientation.y;
-  ori_hector_[3] = msg->pose.orientation.z;
-
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
 
   if (!std::isfinite(msg->pose.position.x)) {
@@ -603,10 +595,22 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     return;
   }
 
+  if (!getting_pixhawk_odom_) {
+    RCLCPP_INFO(this->get_logger(), "[%s]: Waiting for pixhawk odom to initialize tf", this->get_name());
+    return;
+  }
+
   /* Setup variables for tfs */
   if (!getting_hector_) {
-    /* pos_tf_hector_ = pos_gps; */
-    /* ori_tf_hector_ = ori_gps_; */
+    pos_orig_hector_[0] = pos_gps_[0];
+    pos_orig_hector_[1] = pos_gps_[1];
+    pos_orig_hector_[2] = 0;
+    ori_orig_hector_[0] = ori_gps_[0];
+    ori_orig_hector_[1] = ori_gps_[1];
+    ori_orig_hector_[2] = ori_gps_[2];
+    ori_orig_hector_[3] = ori_gps_[3];
+    RCLCPP_INFO(this->get_logger(), "[%s]: Hector origin coordinates set - x: %f y: %f z: %f, w: %f, x: %f, y: %f, z: %f", this->get_name(),
+                pos_orig_hector_[0], pos_orig_hector_[1], pos_orig_hector_[2], ori_orig_hector_[0], ori_orig_hector_[1], ori_orig_hector_[2]);
   }
 
   /* get heading from hector orientation quaternion //{*/
@@ -931,6 +935,38 @@ void Odometry2::publishTF() {
       tf1.transform.rotation.y = q.getY();
       tf1.transform.rotation.z = q.getZ();
       tf_broadcaster_->sendTransform(tf1);
+
+      if (getting_hector_) {
+        tf1.header.stamp            = this->get_clock()->now();
+        tf1.header.frame_id         = ned_origin_frame_;
+        tf1.child_frame_id          = hector_origin_frame_;
+        tf1.transform.translation.x = pos_orig_hector_[0];
+        tf1.transform.translation.y = pos_orig_hector_[1];
+        tf1.transform.translation.z = pos_orig_hector_[2];
+        q.setRPY(M_PI, 0, M_PI / 2);
+        tf1.transform.rotation.w = q.getW();
+        tf1.transform.rotation.x = q.getX();
+        tf1.transform.rotation.y = q.getY();
+        tf1.transform.rotation.z = q.getZ();
+        /* tf1.transform.rotation.w = ori_orig_hector_[0]; */
+        /* tf1.transform.rotation.x = ori_orig_hector_[1]; */
+        /* tf1.transform.rotation.y = ori_orig_hector_[2]; */
+        /* tf1.transform.rotation.z = ori_orig_hector_[3]; */
+        tf_broadcaster_->sendTransform(tf1);
+
+        tf1.header.stamp            = this->get_clock()->now();
+        tf1.header.frame_id         = hector_origin_frame_;
+        tf1.child_frame_id          = hector_frame_;
+        tf1.transform.translation.x = pos_hector_[0];
+        tf1.transform.translation.y = pos_hector_[1];
+        tf1.transform.translation.z = pos_hector_[2];
+        tf1.transform.rotation.w    = ori_hector_[0];
+        tf1.transform.rotation.x    = ori_hector_[1];
+        tf1.transform.rotation.y    = ori_hector_[2];
+        tf1.transform.rotation.z    = ori_hector_[3];
+        tf_broadcaster_->sendTransform(tf1);
+      }
+
       return;
     }
     //}
@@ -939,18 +975,18 @@ void Odometry2::publishTF() {
     if (estimator_source_.type == fog_msgs::msg::EstimatorType::HECTOR) {
       /* std::scoped_lock lock(mutex_hector_); */
 
-      geometry_msgs::msg::TransformStamped tf1;
-      tf1.header.stamp            = this->get_clock()->now();
-      tf1.header.frame_id         = hector_origin_frame_;
-      tf1.child_frame_id          = hector_frame_;
-      tf1.transform.translation.x = pos_hector_[0];
-      tf1.transform.translation.y = pos_hector_[1];
-      tf1.transform.translation.z = pos_hector_[2];
-      tf1.transform.rotation.w    = ori_hector_[0];
-      tf1.transform.rotation.x    = ori_hector_[1];
-      tf1.transform.rotation.y    = ori_hector_[2];
-      tf1.transform.rotation.z    = ori_hector_[3];
-      tf_broadcaster_->sendTransform(tf1);
+      /* geometry_msgs::msg::TransformStamped tf1; */
+      /* tf1.header.stamp            = this->get_clock()->now(); */
+      /* tf1.header.frame_id         = hector_origin_frame_; */
+      /* tf1.child_frame_id          = hector_frame_; */
+      /* tf1.transform.translation.x = pos_hector_[0]; */
+      /* tf1.transform.translation.y = pos_hector_[1]; */
+      /* tf1.transform.translation.z = pos_hector_[2]; */
+      /* tf1.transform.rotation.w    = ori_hector_[0]; */
+      /* tf1.transform.rotation.x    = ori_hector_[1]; */
+      /* tf1.transform.rotation.y    = ori_hector_[2]; */
+      /* tf1.transform.rotation.z    = ori_hector_[3]; */
+      /* tf_broadcaster_->sendTransform(tf1); */
 
       tf1.header.stamp            = this->get_clock()->now();
       tf1.header.frame_id         = hector_frame_;
@@ -1184,7 +1220,6 @@ void Odometry2::updateEstimators() {
 
   //}
 
-  // publish odometry//{
   nav_msgs::msg::Odometry msg;
   msg.header.stamp = this->get_clock()->now();
   /* msg.header.frame_id = world_frame_; */
@@ -1230,13 +1265,18 @@ void Odometry2::updateEstimators() {
   // Transform the mavros orientation by the rotation matrix
   quaternion = Eigen::Quaterniond(tf2::Transform(tf2::Matrix3x3(tf2_quaternion)) * mavros_orientation_);
 
-  geom_quaternion.x = quaternion.x();
-  geom_quaternion.y = quaternion.y();
-  geom_quaternion.z = quaternion.z();
-  geom_quaternion.w = quaternion.w();
+  /* geom_quaternion.x = quaternion.x(); */
+  /* geom_quaternion.y = quaternion.y(); */
+  /* geom_quaternion.z = quaternion.z(); */
+  /* geom_quaternion.w = quaternion.w(); */
+  // TODO: This orientation cannot be used, try to orient it corretly. Using mavros magnetometer orientation instead
+  ori_hector_[0] = mavros_orientation_.getW();
+  ori_hector_[1] = mavros_orientation_.getX();
+  ori_hector_[2] = mavros_orientation_.getY();
+  ori_hector_[3] = mavros_orientation_.getZ();
 
   // lateral
-  double pos_x, pos_y, vel_x, vel_y, acc_x, acc_y;
+  double pos_x, pos_y, pos_z, vel_x, vel_y, acc_x, acc_y;
 
   hector_lat_estimator_->getState(0, pos_x);
   hector_lat_estimator_->getState(1, pos_y);
@@ -1245,31 +1285,29 @@ void Odometry2::updateEstimators() {
   hector_lat_estimator_->getState(4, acc_x);
   hector_lat_estimator_->getState(5, acc_y);
 
+  pos_hector_[0] = pos_x;
+  pos_hector_[1] = pos_y;
+
   // altitude
-  double pos_z, vel_z;
+  double vel_z;
 
   garmin_alt_estimator_->getState(0, pos_z);
   garmin_alt_estimator_->getState(1, vel_z);
 
+  pos_hector_[2] = pos_z;
 
-  msg.pose.pose.position.x = pos_y;
-  msg.pose.pose.position.y = pos_x;
-  msg.pose.pose.position.z = -pos_z;
-  msg.twist.twist.linear.x = vel_y;
-  msg.twist.twist.linear.y = vel_x;
-  msg.twist.twist.linear.z = -vel_z;
 
-  /* auto tf                     = transformBetween(fcu_frame_, world_frame_); */
-  /* msg.pose.pose.orientation.w = tf.pose.orientation.w; */
-  /* msg.pose.pose.orientation.x = tf.pose.orientation.x; */
-  /* msg.pose.pose.orientation.y = tf.pose.orientation.y; */
-  /* msg.pose.pose.orientation.z = tf.pose.orientation.z; */
-
-  geom_quaternion.w         = mavros_orientation_.getW();
-  geom_quaternion.x         = mavros_orientation_.getX();
-  geom_quaternion.y         = mavros_orientation_.getY();
-  geom_quaternion.z         = mavros_orientation_.getZ();
-  msg.pose.pose.orientation = geom_quaternion;
+  // publish odometry//{
+  msg.pose.pose.position.x    = pos_hector_[1];
+  msg.pose.pose.position.y    = pos_hector_[0];
+  msg.pose.pose.position.z    = -pos_hector_[2];
+  msg.twist.twist.linear.x    = vel_y;
+  msg.twist.twist.linear.y    = vel_x;
+  msg.twist.twist.linear.z    = -vel_z;
+  msg.pose.pose.orientation.w = ori_hector_[0];
+  msg.pose.pose.orientation.x = ori_hector_[1];
+  msg.pose.pose.orientation.y = ori_hector_[2];
+  msg.pose.pose.orientation.z = ori_hector_[3];
 
   local_hector_publisher_->publish(msg);
   /*//}*/
@@ -1281,19 +1319,14 @@ void Odometry2::updateEstimators() {
   visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000;
   visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
 
-  visual_odometry_.x = pos_y;
-  visual_odometry_.y = pos_x;
-  visual_odometry_.z = -pos_z;
+  visual_odometry_.x = pos_hector_[1];
+  visual_odometry_.y = pos_hector_[0];
+  visual_odometry_.z = -pos_hector_[2];
 
-  visual_odometry_.q[0] = mavros_orientation_.getW();
-  visual_odometry_.q[1] = mavros_orientation_.getX();
-  visual_odometry_.q[2] = mavros_orientation_.getY();
-  visual_odometry_.q[3] = mavros_orientation_.getZ();
-
-  /* visual_odometry_.q[0] = geom_quaternion.w; */
-  /* visual_odometry_.q[1] = geom_quaternion.x; */
-  /* visual_odometry_.q[2] = geom_quaternion.y; */
-  /* visual_odometry_.q[3] = geom_quaternion.z; */
+  visual_odometry_.q[0] = ori_hector_[0];
+  visual_odometry_.q[1] = ori_hector_[1];
+  visual_odometry_.q[2] = ori_hector_[2];
+  visual_odometry_.q[3] = ori_hector_[3];
 
   std::fill(visual_odometry_.q_offset.begin(), visual_odometry_.q_offset.end(), NAN);
 
