@@ -485,7 +485,7 @@ bool LateralEstimator::getQ(double &cov, const Eigen::Vector2i &idx) {
 
   {
     std::scoped_lock lock(mutex_lkf);
-
+    
     cov = m_Q(idx(0), idx(1));
   }
 

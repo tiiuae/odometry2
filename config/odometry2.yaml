@@ -1,6 +1,7 @@
 param_namespace:
   odometry_source: "GPS"
   odometry_loop_rate: 100.0 # [Hz]
+  max_gps_eph: 2.0 # [m]
 
 # altitude estimation # #{
   altitude:

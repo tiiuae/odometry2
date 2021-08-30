@@ -54,6 +54,10 @@ def generate_launch_description():
 
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
+
+                    ("~/get_px4_param_int", "~/get_px4_param_int"),
+                    ("~/set_px4_param_int", "~/set_px4_param_int"),
+
                 ],
             ),
         ],
