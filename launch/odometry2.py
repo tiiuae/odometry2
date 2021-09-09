@@ -51,12 +51,17 @@ def generate_launch_description():
                     ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
                     # ("~/sensor_gps_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
                     ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
+                    ("~/reset_hector_out", "/" + DRONE_DEVICE_ID + "/syscommand"),
 
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
 
                     ("~/get_px4_param_int", "~/get_px4_param_int"),
                     ("~/set_px4_param_int", "~/set_px4_param_int"),
+                    ("~/reset_hector_service_out", "~/reset_hector_service"),
+                    ("~/land_out", "/"+DRONE_DEVICE_ID+"/control_interface/land"),
+
+                    ("~/reset_hector_service_in", "~/reset_hector_service"),
 
                 ],
             ),

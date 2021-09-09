@@ -1,7 +1,24 @@
 param_namespace:
   odometry_source: "GPS"
   odometry_loop_rate: 100.0 # [Hz]
-  max_gps_eph: 2.0 # [m]
+
+# gps # #{
+  gps:
+    use_gps: true #USE WITH CAUTION, NOT RELIABLE
+    eph_max: 2.0 # max deviation allowed to use gps source [m]
+    msg_good: 5 # number of messages to confirm good gps
+    msg_err: 5 # number of messages to confirm bad gps
+# # #}
+
+# hector # #{
+  hector:
+    use_hector: true # USE WITH CAUTION, NOT RELIABLE
+    num_init_msgs: 10 # number of messages to skip before using hector messages
+    msg_interval_warn: 0.2 # interval between messages that gives warning [s]
+    msg_interval_max: 0.5 # max interval between messages before not reliable hector [s]
+    reset_wait: 5.0 # wait for availability of next hector reset [s]
+    fusion_wait: 3.0 # wait for fusion of the hector data after each reset  [s]
+# # #}
 
 # altitude estimation # #{
   altitude:
