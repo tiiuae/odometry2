@@ -4,7 +4,7 @@ param_namespace:
 
 # gps # #{
   gps:
-    use_gps: true #USE WITH CAUTION, NOT RELIABLE
+    use_gps: false
     eph_max: 2.0 # max deviation allowed to use gps source [m]
     msg_good: 5 # number of messages to confirm good gps
     msg_err: 5 # number of messages to confirm bad gps
@@ -12,7 +12,7 @@ param_namespace:
 
 # hector # #{
   hector:
-    use_hector: true # USE WITH CAUTION, NOT RELIABLE
+    use_hector: false
     num_init_msgs: 10 # number of messages to skip before using hector messages
     msg_interval_warn: 0.2 # interval between messages that gives warning [s]
     msg_interval_max: 0.5 # max interval between messages before not reliable hector [s]

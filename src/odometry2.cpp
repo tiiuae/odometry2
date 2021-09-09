@@ -1409,6 +1409,8 @@ void Odometry2::pixhawkEkfUpdate() {
 
   std::chrono::duration<double> dt = std::chrono::system_clock::now() - hector_reset_called_time_;
 
+  //TODO:: If everything to false, it will keep the previous settings without any change.
+  
   // Initialize the bitmask value
   if (current_ekf_bitmask_ == 0 && !get_ekf_bitmask_called_) {
     get_ekf_bitmask_called_ = true;
@@ -1425,23 +1427,23 @@ void Odometry2::pixhawkEkfUpdate() {
         hector_use_) {
       set_ekf_bitmask_called_ = true;
       request->value          = 321;
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
+      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
     } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 320 && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ &&
                hector_use_) {
       set_ekf_bitmask_called_ = true;
       request->value          = 320;
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
-    } else if (gps_reliable_ && !hector_reliable_ && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && gps_use_) {
+      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+    } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && gps_use_) {
       set_ekf_bitmask_called_ = true;
       request->value          = 1;
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
+      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
     } else if (!gps_reliable_ && !hector_reliable_) {
       auto request     = std::make_shared<std_srvs::srv::SetBool::Request>();
-      auto call_result = land_service_->async_send_request(request);
       RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
+      auto call_result = land_service_->async_send_request(request);
     }
   }
 }
