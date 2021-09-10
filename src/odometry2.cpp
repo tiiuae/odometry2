@@ -138,25 +138,29 @@ private:
   std::atomic_bool gps_reliable_    = false;
 
   // HECTOR
-  bool                                               hector_use_ = false;
-  float                                              pos_hector_[3];
-  float                                              pos_hector_raw_prev_[2];
-  float                                              pos_hector_raw[2];
-  float                                              ori_hector_[4];
-  float                                              pos_orig_hector_[3];
-  float                                              ori_orig_hector_[4];
-  int                                                c_hector_init_msgs_       = 0;
-  int                                                hector_num_init_msgs_     = 10;
-  float                                              hector_msg_interval_max_  = 0.0;
-  float                                              hector_msg_interval_warn_ = 0.0;
-  double                                             hector_hdg_previous_      = 0.0;
-  std::atomic_bool                                   hector_reliable_          = true;
+  bool             hector_use_ = false;
+  float            pos_hector_[3];
+  std::mutex       mutex_hector_raw_;
+  float            pos_hector_raw_prev_[2];
+  float            pos_hector_raw_[2];
+  float            ori_hector_[4];
+  float            pos_orig_hector_[3];
+  float            ori_orig_hector_[4];
+  int              c_hector_init_msgs_       = 0;
+  int              hector_num_init_msgs_     = 10;
+  float            hector_msg_interval_max_  = 0.0;
+  float            hector_msg_interval_warn_ = 0.0;
+  double           hector_hdg_previous_      = 0.0;
+  float            hector_reset_wait_        = 0.0;
+  float            hector_fusion_wait_       = 0.0;
+  float            hector_max_position_jump_ = 0.0;
+  float            hector_max_velocity_      = 0.0;
+  std::atomic_bool hector_reliable_          = true;
+  std::atomic_bool hector_tf_setup_          = false;
+  std::atomic_bool hector_reset_called_      = false;
+
   std::chrono::time_point<std::chrono::system_clock> time_hector_last_msg_;
-  std::atomic_bool                                   hector_reset_called_      = false;
   std::chrono::time_point<std::chrono::system_clock> hector_reset_called_time_ = std::chrono::system_clock::now();
-  float                                              hector_reset_wait_        = 0.0;
-  float                                              hector_fusion_wait_       = 0.0;
-  std::atomic_bool                                   hector_tf_setup_          = false;
 
 
   // VISION SENSOR
@@ -266,8 +270,6 @@ private:
   // internal functions
   bool        isValidType(const fog_msgs::msg::EstimatorType &type);
   bool        isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name);
-  bool        changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desired_estimator);
-  void        setupEstimator(const std::string &type);
   std::string printOdometryDiag();
   std::string toUppercase(const std::string &type);
 
@@ -332,6 +334,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   parse_param("hector.msg_interval_warn", hector_msg_interval_warn_);
   parse_param("hector.reset_wait", hector_reset_wait_);
   parse_param("hector.fusion_wait", hector_fusion_wait_);
+  parse_param("hector.max_velocity", hector_max_velocity_);
+  parse_param("hector.max_position_jump", hector_max_position_jump_);
 
   /* frame definition */
   world_frame_         = "world";
@@ -473,11 +477,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   hector_lat_estimator_ = std::make_shared<LateralEstimator>("hector", Q_lat, R_lat_vec_);
   /*//}*/
-
-  estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::HECTOR));
-  estimator_type_names_.push_back(NAME_OF(fog_msgs::msg::EstimatorType::GPS));
-
-  setupEstimator(_estimator_source_param_);
 
   // publishers
   local_odom_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
@@ -716,12 +715,16 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     return;
   }
 
-  // Update od the position for the reliability check
-  pos_hector_raw_prev_[0] = pos_hector_raw[0];
-  pos_hector_raw_prev_[1] = pos_hector_raw[1];
+  {
+    // Update od the position for the reliability check
+    std::scoped_lock lock(mutex_hector_raw_);
+    pos_hector_raw_prev_[0] = pos_hector_raw_[0];
+    pos_hector_raw_prev_[1] = pos_hector_raw_[1];
 
-  pos_hector_raw[0] = msg->pose.position.x;
-  pos_hector_raw[1] = msg->pose.position.y;
+    pos_hector_raw_[0] = msg->pose.position.x;
+    pos_hector_raw_[1] = msg->pose.position.y;
+  }
+
 
   /*//}*/
 
@@ -744,7 +747,8 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     /* ori_orig_hector_[2] = ori_gps_[2]; */
     /* ori_orig_hector_[3] = ori_gps_[3]; */
     RCLCPP_INFO(this->get_logger(), "[%s]: Hector origin coordinates set - x: %f y: %f z: %f, w: %f, x: %f, y: %f, z: %f", this->get_name(),
-                pos_orig_hector_[0], pos_orig_hector_[1], pos_orig_hector_[2], ori_orig_hector_[0], ori_orig_hector_[1], ori_orig_hector_[2], ori_orig_hector_[3]);
+                pos_orig_hector_[0], pos_orig_hector_[1], pos_orig_hector_[2], ori_orig_hector_[0], ori_orig_hector_[1], ori_orig_hector_[2],
+                ori_orig_hector_[3]);
     hector_tf_setup_ = true;
   } /*//}*/
 
@@ -901,58 +905,6 @@ bool Odometry2::resetHectorClientCallback(rclcpp::Client<std_srvs::srv::Trigger>
     /* RCLCPP_ERROR(this->get_logger(), "[%s]: Hector was not reset, message: %s", this->get_name(), result->message.c_str()); */
     return false;
   }
-}
-//}
-
-/* callbackChangeEstimator //{ */
-bool Odometry2::callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Request>  req,
-                                        const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Response> res) {
-
-  if (!is_initialized_) {
-    return false;
-  }
-
-  if (!callbacks_enabled_) {
-    res->success = false;
-    res->message = ("Service callbacks are disabled");
-    RCLCPP_WARN(this->get_logger(), "[%s]: Ignoring service all. Callbacks are disabled", this->get_name());
-    return false;
-  }
-
-  // Check whether a valid type was requested
-  if (!isValidType(req->estimator_type)) {
-    RCLCPP_INFO(this->get_logger(), "test 1");
-    RCLCPP_ERROR(this->get_logger(), "[%s]: %d is not a valid odometry type", this->get_name(), req->estimator_type.type);
-    res->success = false;
-    res->message = ("Not a valid odometry type");
-    {
-      std::scoped_lock lock(mutex_estimator_source_);
-      res->estimator_type.type = estimator_source_.type;
-    }
-    return true;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "test 2");
-  // Change the estimator
-  bool                         success = false;
-  fog_msgs::msg::EstimatorType desired_estimator;
-  RCLCPP_INFO(this->get_logger(), "test 3");
-  desired_estimator.type = req->estimator_type.type;
-  desired_estimator.name = estimator_type_names_[desired_estimator.type];
-  success                = changeCurrentEstimator(desired_estimator);
-  RCLCPP_INFO(this->get_logger(), "test 4");
-
-  RCLCPP_INFO(this->get_logger(), "[%s]: %s", this->get_name(), printOdometryDiag().c_str());
-
-  res->success = success;
-  res->message = (printOdometryDiag().c_str());
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
-
-    res->estimator_type.type = estimator_source_.type;
-  }
-
-  return true;
 }
 //}
 
@@ -1252,11 +1204,10 @@ void Odometry2::publishTF() {
 /* publishLocalOdom //{ */
 void Odometry2::publishLocalOdom() {
   nav_msgs::msg::Odometry msg;
-  msg.header.stamp    = this->get_clock()->now();
-  msg.header.frame_id = world_frame_;
-  msg.child_frame_id  = fcu_frame_;
-  auto tf             = transformBetween(fcu_frame_, world_frame_);
-  /* auto tf                     = transformBetween(world_frame_, fcu_frame_); */
+  msg.header.stamp            = this->get_clock()->now();
+  msg.header.frame_id         = world_frame_;
+  msg.child_frame_id          = fcu_frame_;
+  auto tf                     = transformBetween(fcu_frame_, world_frame_);
   msg.pose.pose.position.x    = tf.pose.position.x;
   msg.pose.pose.position.y    = tf.pose.position.y;
   msg.pose.pose.position.z    = tf.pose.position.z;
@@ -1335,82 +1286,13 @@ bool Odometry2::isValidGate(const double value, const double min_value, const do
 }
 /*//}*/
 
-/* //{ changeCurrentEstimator */
-bool Odometry2::changeCurrentEstimator(const fog_msgs::msg::EstimatorType &desired_estimator) {
-
-  fog_msgs::msg::EstimatorType target_estimator = desired_estimator;
-  target_estimator.name                         = estimator_type_names_[target_estimator.type];
-
-  RCLCPP_INFO(this->get_logger(), "test 5");
-  // Return if already active
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
-    if (toUppercase(estimator_source_.name) == toUppercase(target_estimator.name)) {
-      RCLCPP_INFO(this->get_logger(), "[%s]: Desired estimator '%s' already active. Not switching.", this->get_name(), target_estimator.name.c_str());
-      return true;
-    }
-  }
-  RCLCPP_INFO(this->get_logger(), "test 6");
-  // Check odometry source availability
-  if (target_estimator.type == fog_msgs::msg::EstimatorType::GPS) {
-
-    if (!getting_pixhawk_odom_) {
-      RCLCPP_ERROR(this->get_logger(), "[%s]: Cannot transition to GPS type. GPS source is not active.", this->get_name());
-      return false;
-    }
-  } else if (target_estimator.type == fog_msgs::msg::EstimatorType::HECTOR) {
-
-    if (!getting_hector_) {
-      RCLCPP_ERROR(this->get_logger(), "[%s]: Cannot transition to HECTOR type. HECTOR source is not active.", this->get_name());
-      return false;
-    }
-  } else {
-    RCLCPP_ERROR(this->get_logger(), "[%s]: Rejected transition to invalid types %s", this->get_name(), target_estimator.name.c_str());
-    return false;
-  }
-  RCLCPP_INFO(this->get_logger(), "test 7");
-
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
-    estimator_source_      = target_estimator;
-    estimator_source_.name = _estimator_source_param_[estimator_source_.type];
-    RCLCPP_WARN(this->get_logger(), "[%s]: Transition to %s state estimator successful", this->get_name(), estimator_source_.name.c_str());
-  }
-  return true;
-}
-
-
-//}
-
-/* //{ setupEstimator */
-void Odometry2::setupEstimator(const std::string &type) {
-
-  std::scoped_lock lock(mutex_estimator_source_);
-  if (type == "GPS") {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Settting up odometry source '%s'", this->get_name(), type.c_str());
-    estimator_source_.type = fog_msgs::msg::EstimatorType::GPS;
-    estimator_source_.name = estimator_type_names_[estimator_source_.type];
-
-  } else if (type == "HECTOR") {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Settting up odometry source '%s'", this->get_name(), type.c_str());
-    estimator_source_.type = fog_msgs::msg::EstimatorType::HECTOR;
-    estimator_source_.name = estimator_type_names_[estimator_source_.type];
-
-  } else {
-    RCLCPP_ERROR(this->get_logger(), "[%s]: Could not find a odometry source: '%s'", this->get_name(), type);
-  }
-  return;
-}
-
-//}
-
 /* pixhawkEkfUpdate //{*/
 void Odometry2::pixhawkEkfUpdate() {
 
   std::chrono::duration<double> dt = std::chrono::system_clock::now() - hector_reset_called_time_;
 
-  //TODO:: If everything to false, it will keep the previous settings without any change.
-  
+  // TODO:: If everything to false, it will keep the previous settings without any change.
+
   // Initialize the bitmask value
   if (current_ekf_bitmask_ == 0 && !get_ekf_bitmask_called_) {
     get_ekf_bitmask_called_ = true;
@@ -1428,20 +1310,20 @@ void Odometry2::pixhawkEkfUpdate() {
       set_ekf_bitmask_called_ = true;
       request->value          = 321;
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+      auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
     } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 320 && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ &&
                hector_use_) {
       set_ekf_bitmask_called_ = true;
       request->value          = 320;
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+      auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
     } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && gps_use_) {
       set_ekf_bitmask_called_ = true;
       request->value          = 1;
       RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
-      auto call_result        = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+      auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
     } else if (!gps_reliable_ && !hector_reliable_) {
-      auto request     = std::make_shared<std_srvs::srv::SetBool::Request>();
+      auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
       RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
       auto call_result = land_service_->async_send_request(request);
     }
@@ -1456,7 +1338,9 @@ void Odometry2::resetHector() {
     auto call_result = reset_hector_client_->async_send_request(request, std::bind(&Odometry2::resetHectorClientCallback, this, std::placeholders::_1));
   }
 
-  if (std::fabs(pos_hector_raw[0]) < 1.0 && std::fabs(pos_hector_raw[1]) < 1.0 && hector_reset_called_) {
+  std::scoped_lock lock(mutex_hector_raw_);
+
+  if (std::fabs(pos_hector_raw_[0]) < 1.0 && std::fabs(pos_hector_raw_[1]) < 1.0 && hector_reset_called_) {
     RCLCPP_INFO(this->get_logger(), "[%s]: Hector reinitalizied!", this->get_name());
 
     // Reset HECTOR heading
@@ -1472,17 +1356,24 @@ void Odometry2::resetHector() {
 
     RCLCPP_WARN(this->get_logger(), "[Odometry2]: Hector estimators reset");
 
+    pos_hector_raw_[0]      = 0;
+    pos_hector_raw_[1]      = 0;
+    pos_hector_raw_prev_[0] = 0;
+    pos_hector_raw_prev_[1] = 0;
+
     c_hector_init_msgs_       = 0;
     hector_reset_called_      = false;
     hector_tf_setup_          = false;
     hector_reliable_          = true;
     hector_reset_called_time_ = std::chrono::system_clock::now();
 
+    // Reset estimator time update
+    time_odometry_timer_prev_ = std::chrono::system_clock::now();
+
   } else {
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "[%s]: Waiting for reset of hector map", this->get_name());
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Waiting for reset of hector map", this->get_name());
   }
 }  //}
-
 
 /* updateEstimators //{*/
 void Odometry2::updateEstimators() {
@@ -1789,12 +1680,17 @@ void Odometry2::checkHectorReliability() {
   /*//}*/
 
   // Detect jump since previous pose//{
-  if (std::pow(pos_hector_raw[0] - pos_hector_raw_prev_[0], 2) > 4 || std::pow(pos_hector_raw[1] - pos_hector_raw_prev_[1], 2) > 4) {
-    RCLCPP_WARN(this->get_logger(), "[Odometry2]: Jump detected in Hector Slam pose. Not reliable");
-    hector_reliable_ = false;
-    return;
-  }
 
+  {
+    std::scoped_lock lock(mutex_hector_raw_);
+    if (std::pow(pos_hector_raw_[0] - pos_hector_raw_prev_[0], 2) > hector_max_position_jump_ ||
+        std::pow(pos_hector_raw_[1] - pos_hector_raw_prev_[1], 2) > hector_max_position_jump_) {
+      RCLCPP_WARN(this->get_logger(), "[Odometry2]: Jump detected in Hector Slam pose. orig_x: %f, orig_y: %f, x: %f, y: %f .Not reliable",
+                  pos_hector_raw_prev_[0], pos_hector_raw_prev_[1], pos_hector_raw_[0], pos_hector_raw_[1]);
+      hector_reliable_ = false;
+      return;
+    }
+  }
   /*//}*/
 
   // Check if hector speed reliable//{
@@ -1803,9 +1699,9 @@ void Odometry2::checkHectorReliability() {
   hector_lat_estimator_->getState(2, vel_x);
   hector_lat_estimator_->getState(3, vel_y);
 
-  if (vel_x > 5 || vel_y > 5) {
+  if (vel_x > hector_max_velocity_ || vel_y > hector_max_velocity_) {
     hector_reliable_ = false;
-    RCLCPP_WARN(this->get_logger(), "[Odometry2]: Hector Slam velocity too large - x: %f, y: %f. Not reliable.", vel_x, vel_y);
+    RCLCPP_WARN(this->get_logger(), "[Odometry2]: Hector velocity too large - x: %f, y: %f. Not reliable.", vel_x, vel_y);
     return;
   } /*//}*/
 
