@@ -20,8 +20,6 @@
 #include <fog_msgs/srv/get_origin.hpp>
 #include <fog_msgs/srv/get_bool.hpp>
 #include <fog_msgs/srv/vec4.hpp>
-#include <fog_msgs/srv/change_estimator.hpp>
-#include <fog_msgs/msg/estimator_type.hpp>
 #include <fog_msgs/srv/get_px4_param_int.hpp>
 #include <fog_msgs/srv/set_px4_param_int.hpp>
 #include <nav_msgs/msg/path.hpp>
@@ -117,14 +115,6 @@ private:
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 
-  // GPS SENSOR
-  std::thread              gps_sensor_thread_;
-  void                     gpsSensorThreadRoutine(void);
-  rclcpp::Rate             gps_sensor_thread_rate_ = rclcpp::Rate(5);
-  px4_msgs::msg::SensorGps gps_sensor_;
-  std::mutex               mutex_gps_sensor_;
-  std::atomic_int          gps_sensor_publisher_counter_ = 0;
-
   // GPS
   bool             gps_use_ = false;
   float            pos_gps_[3];
@@ -210,13 +200,9 @@ private:
   std::atomic_bool    got_hector_lat_correction_ = false;
 
   // Odometry switch
-  fog_msgs::msg::EstimatorType estimator_source_;
-  std::string                  _estimator_source_param_;
-  std::mutex                   mutex_estimator_source_;
-  std::vector<std::string>     estimator_type_names_;
-  std::atomic_int              current_ekf_bitmask_    = 0;
-  std::atomic_bool             get_ekf_bitmask_called_ = false;
-  std::atomic_bool             set_ekf_bitmask_called_ = false;
+  std::atomic_int  current_ekf_bitmask_    = 0;
+  std::atomic_bool get_ekf_bitmask_called_ = false;
+  std::atomic_bool set_ekf_bitmask_called_ = false;
 
   // publishers
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
@@ -243,14 +229,11 @@ private:
   void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg);
 
   // services provided
-  rclcpp::Service<fog_msgs::srv::ChangeEstimator>::SharedPtr change_odometry_source_;
-  rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr         getting_odom_service_;
-  rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr       get_origin_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr         reset_hector_service_;
+  rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr   getting_odom_service_;
+  rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr get_origin_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr   reset_hector_service_;
 
   // service callbacks
-  bool callbackChangeEstimator(const std::shared_ptr<fog_msgs::srv::ChangeEstimator::Request> req,
-                               std::shared_ptr<fog_msgs::srv::ChangeEstimator::Response>      res);
   bool getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Request> request, std::shared_ptr<fog_msgs::srv::GetBool::Response> response);
   bool getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request, std::shared_ptr<fog_msgs::srv::GetOrigin::Response> response);
   bool resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response);
@@ -268,7 +251,6 @@ private:
 
 
   // internal functions
-  bool        isValidType(const fog_msgs::msg::EstimatorType &type);
   bool        isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name);
   std::string printOdometryDiag();
   std::string toUppercase(const std::string &type);
@@ -291,11 +273,6 @@ private:
   void                                               odometryRoutine(void);
   std::chrono::time_point<std::chrono::system_clock> time_odometry_timer_prev_;
   std::atomic_bool                                   time_odometry_timer_set_ = false;
-
-  // threads if timers do not work
-  std::thread  odometry_thread_;
-  void         odometryThreadRoutine(void);
-  rclcpp::Rate odometry_thread_rate_ = rclcpp::Rate(100);
 
   // utils
   template <class T>
@@ -322,7 +299,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /* parse general params from config file //{ */
 
   bool callbacks_enabled_ = false;
-  parse_param("odometry_source", _estimator_source_param_);
   parse_param("odometry_loop_rate", odometry_loop_rate_);
   parse_param("gps.use_gps", gps_use_);
   parse_param("gps.eph_max", gps_eph_max_);
@@ -501,8 +477,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
       this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::baroCallback, this, _1));
 
   // service handlers
-  change_odometry_source_ =
-      this->create_service<fog_msgs::srv::ChangeEstimator>("~/change_odometry_source", std::bind(&Odometry2::callbackChangeEstimator, this, _1, _2));
   getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/getting_odom", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
   get_origin_service_   = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
   reset_hector_service_ = this->create_service<std_srvs::srv::Trigger>("~/reset_hector_service_in", std::bind(&Odometry2::resetHectorCallback, this, _1, _2));
@@ -525,12 +499,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_buffer_->setUsingDedicatedThread(true);
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
-
-  odometry_thread_ = std::thread(&Odometry2::odometryThreadRoutine, this);
-  odometry_thread_.detach();
-
-  gps_sensor_thread_ = std::thread(&Odometry2::gpsSensorThreadRoutine, this);
-  gps_sensor_thread_.detach();
 
   is_initialized_ = true;
   RCLCPP_INFO(this->get_logger(), "[%s]: Initialized", this->get_name());
@@ -634,50 +602,6 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 
   getting_pixhawk_odom_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting pixhawk odometry!", this->get_name());
-}
-//}
-
-/* gpsSensorThreadRoutine //{ */
-void Odometry2::gpsSensorThreadRoutine(void) {
-  while (rclcpp::ok()) {
-    if (is_initialized_) {
-      std::scoped_lock lock(mutex_gps_sensor_);
-
-      std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now() - time_sync_time_;
-
-      gps_sensor_.timestamp      = timestamp_ + diff.count() / 1000;
-      gps_sensor_.lat            = 0;
-      gps_sensor_.lon            = 0;
-      gps_sensor_.alt            = 100;
-      gps_sensor_.s_variance_m_s = 0;
-
-      gps_sensor_.fix_type = 3;
-      gps_sensor_.eph      = 1.0;
-      gps_sensor_.epv      = 1.0;
-      gps_sensor_.hdop     = 0.0;
-      gps_sensor_.vdop     = 0.0;
-
-      gps_sensor_.vel_m_s       = 0;
-      gps_sensor_.vel_n_m_s     = 0;
-      gps_sensor_.vel_e_m_s     = 0;
-      gps_sensor_.vel_d_m_s     = 0;
-      gps_sensor_.cog_rad       = 0;
-      gps_sensor_.vel_ned_valid = 0;
-
-      gps_sensor_.time_utc_usec = gps_sensor_.timestamp;
-
-      gps_sensor_.satellites_used = 10;
-      gps_sensor_.heading         = 0;
-      gps_sensor_.heading_offset  = 0;
-
-      gps_sensor_publisher_->publish(gps_sensor_);
-      gps_sensor_publisher_counter_++;
-      if (gps_sensor_publisher_counter_ > 100) {
-        return;
-      }
-    }
-    gps_sensor_thread_rate_.sleep();
-  }
 }
 //}
 
@@ -988,53 +912,31 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 }
 //}
 
-/* odometryThreadRoutine //{ */
-void Odometry2::odometryThreadRoutine(void) {
-  while (rclcpp::ok()) {
-    if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) {
-      callbacks_enabled_ = true;
-      odom_ready_        = true;
-      if (static_tf_broadcaster_ == nullptr) {
-        static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this());
-        publishStaticTF();
-      }
-
-      pixhawkEkfUpdate();
-
-      publishTF();
-      publishLocalOdom();
-
-
-      if (hector_reliable_) {
-        updateEstimators();
-        publishOdometry();
-        checkHectorReliability();
-      } else {
-        resetHector();
-      }
-    }
-
-    odometry_thread_rate_.sleep();
-  }
-}
-//}
-
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
-  /* if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {  // && getting_hector_) { */
-  /*   callbacks_enabled_ = true; */
-  /*   odom_ready_        = true; */
-  /*   if (static_tf_broadcaster_ == nullptr) { */
-  /*     static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this()); */
-  /*     publishStaticTF(); */
-  /*     return; */
-  /*   } */
+  if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_ && getting_hector_) {
+    callbacks_enabled_ = true;
+    odom_ready_        = true;
+    if (static_tf_broadcaster_ == nullptr) {
+      static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this->shared_from_this());
+      publishStaticTF();
+      return;
+    }
 
-  /*   updateEstimators(); */
+    pixhawkEkfUpdate();
 
-  /*   publishTF(); */
-  /*   publishLocalOdom(); */
-  /* } */
+    publishTF();
+    publishLocalOdom();
+
+
+    if (hector_reliable_) {
+      updateEstimators();
+      publishOdometry();
+      checkHectorReliability();
+    } else {
+      resetHector();
+    }
+  }
 }
 //}
 
@@ -1081,122 +983,62 @@ void Odometry2::publishTF() {
   geometry_msgs::msg::TransformStamped tf1;
   tf2::Quaternion                      q;
 
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
+  tf1.header.stamp            = this->get_clock()->now();
+  tf1.header.frame_id         = ned_origin_frame_;
+  tf1.child_frame_id          = ned_fcu_frame_;
+  tf1.transform.translation.x = pos_gps_[0];
+  tf1.transform.translation.y = pos_gps_[1];
+  tf1.transform.translation.z = pos_gps_[2];
+  tf1.transform.rotation.w    = ori_gps_[0];
+  tf1.transform.rotation.x    = ori_gps_[1];
+  tf1.transform.rotation.y    = ori_gps_[2];
+  tf1.transform.rotation.z    = ori_gps_[3];
+  tf_broadcaster_->sendTransform(tf1);
 
-    /* q.setRPY(M_PI, 0, M_PI / 2); */
-    /* tf1.header.stamp            = this->get_clock()->now(); */
-    /* tf1.header.frame_id         = ned_origin_frame_; */
-    /* tf1.child_frame_id          = hector_origin_frame_; */
-    /* tf1.transform.translation.x = pos_gps_[0]; */
-    /* tf1.transform.translation.y = pos_gps_[1]; */
-    /* tf1.transform.translation.z = pos_gps_[2]; */
-    /* tf1.transform.rotation.w    = ori_gps_[0]; */
-    /* tf1.transform.rotation.x    = ori_gps_[1]; */
-    /* tf1.transform.rotation.y    = ori_gps_[2]; */
-    /* tf1.transform.rotation.z    = ori_gps_[3]; */
-    /* tf_broadcaster_->sendTransform(tf1); */
+  tf1.header.stamp            = this->get_clock()->now();
+  tf1.header.frame_id         = ned_fcu_frame_;
+  tf1.child_frame_id          = fcu_frame_;
+  tf1.transform.translation.x = 0;
+  tf1.transform.translation.y = 0;
+  tf1.transform.translation.z = 0;
+  q.setRPY(-M_PI, 0, 0);
+  tf1.transform.rotation.w = q.getW();
+  tf1.transform.rotation.x = q.getX();
+  tf1.transform.rotation.y = q.getY();
+  tf1.transform.rotation.z = q.getZ();
+  tf_broadcaster_->sendTransform(tf1);
 
-    /* GPS //{ */
-    if (estimator_source_.type == fog_msgs::msg::EstimatorType::GPS) {
-      /* std::scoped_lock lock(mutex_gps_); */
+  if (hector_tf_setup_) {
+    tf1.header.stamp            = this->get_clock()->now();
+    tf1.header.frame_id         = world_frame_;
+    tf1.child_frame_id          = hector_origin_frame_;
+    tf1.transform.translation.x = pos_orig_hector_[0];
+    tf1.transform.translation.y = pos_orig_hector_[1];
+    tf1.transform.translation.z = pos_orig_hector_[2];
+    /* q.setRPY(0, 0, 0); */
+    /* tf1.transform.rotation.w = q.getW(); */
+    /* tf1.transform.rotation.x = q.getX(); */
+    /* tf1.transform.rotation.y = q.getY(); */
+    /* tf1.transform.rotation.z = q.getZ(); */
+    tf1.transform.rotation.w = ori_orig_hector_[0];
+    tf1.transform.rotation.x = ori_orig_hector_[1];
+    tf1.transform.rotation.y = ori_orig_hector_[2];
+    tf1.transform.rotation.z = ori_orig_hector_[3];
+    tf_broadcaster_->sendTransform(tf1);
 
+    if (publishing_odometry_) {
       tf1.header.stamp            = this->get_clock()->now();
-      tf1.header.frame_id         = ned_origin_frame_;
-      tf1.child_frame_id          = ned_fcu_frame_;
-      tf1.transform.translation.x = pos_gps_[0];
-      tf1.transform.translation.y = pos_gps_[1];
-      tf1.transform.translation.z = pos_gps_[2];
-      tf1.transform.rotation.w    = ori_gps_[0];
-      tf1.transform.rotation.x    = ori_gps_[1];
-      tf1.transform.rotation.y    = ori_gps_[2];
-      tf1.transform.rotation.z    = ori_gps_[3];
+      tf1.header.frame_id         = hector_origin_frame_;
+      tf1.child_frame_id          = hector_frame_;
+      tf1.transform.translation.x = pos_hector_[0];
+      tf1.transform.translation.y = pos_hector_[1];
+      tf1.transform.translation.z = pos_hector_[2];
+      tf1.transform.rotation.w    = ori_hector_[0];
+      tf1.transform.rotation.x    = ori_hector_[1];
+      tf1.transform.rotation.y    = ori_hector_[2];
+      tf1.transform.rotation.z    = ori_hector_[3];
       tf_broadcaster_->sendTransform(tf1);
-
-      tf1.header.stamp            = this->get_clock()->now();
-      tf1.header.frame_id         = ned_fcu_frame_;
-      tf1.child_frame_id          = fcu_frame_;
-      tf1.transform.translation.x = 0;
-      tf1.transform.translation.y = 0;
-      tf1.transform.translation.z = 0;
-      q.setRPY(-M_PI, 0, 0);
-      tf1.transform.rotation.w = q.getW();
-      tf1.transform.rotation.x = q.getX();
-      tf1.transform.rotation.y = q.getY();
-      tf1.transform.rotation.z = q.getZ();
-      tf_broadcaster_->sendTransform(tf1);
-
-      if (hector_tf_setup_) {
-        tf1.header.stamp            = this->get_clock()->now();
-        tf1.header.frame_id         = world_frame_;
-        tf1.child_frame_id          = hector_origin_frame_;
-        tf1.transform.translation.x = pos_orig_hector_[0];
-        tf1.transform.translation.y = pos_orig_hector_[1];
-        tf1.transform.translation.z = pos_orig_hector_[2];
-        /* q.setRPY(0, 0, 0); */
-        /* tf1.transform.rotation.w = q.getW(); */
-        /* tf1.transform.rotation.x = q.getX(); */
-        /* tf1.transform.rotation.y = q.getY(); */
-        /* tf1.transform.rotation.z = q.getZ(); */
-        tf1.transform.rotation.w = ori_orig_hector_[0];
-        tf1.transform.rotation.x = ori_orig_hector_[1];
-        tf1.transform.rotation.y = ori_orig_hector_[2];
-        tf1.transform.rotation.z = ori_orig_hector_[3];
-        tf_broadcaster_->sendTransform(tf1);
-
-        if (publishing_odometry_) {
-          tf1.header.stamp            = this->get_clock()->now();
-          tf1.header.frame_id         = hector_origin_frame_;
-          tf1.child_frame_id          = hector_frame_;
-          tf1.transform.translation.x = pos_hector_[0];
-          tf1.transform.translation.y = pos_hector_[1];
-          tf1.transform.translation.z = pos_hector_[2];
-          tf1.transform.rotation.w    = ori_hector_[0];
-          tf1.transform.rotation.x    = ori_hector_[1];
-          tf1.transform.rotation.y    = ori_hector_[2];
-          tf1.transform.rotation.z    = ori_hector_[3];
-          tf_broadcaster_->sendTransform(tf1);
-        }
-      }
-
-      return;
     }
-    //}
-
-    /* HECTOR //{ */
-    if (estimator_source_.type == fog_msgs::msg::EstimatorType::HECTOR) {
-      /* std::scoped_lock lock(mutex_hector_); */
-
-      /* geometry_msgs::msg::TransformStamped tf1; */
-      /* tf1.header.stamp            = this->get_clock()->now(); */
-      /* tf1.header.frame_id         = hector_origin_frame_; */
-      /* tf1.child_frame_id          = hector_frame_; */
-      /* tf1.transform.translation.x = pos_hector_[0]; */
-      /* tf1.transform.translation.y = pos_hector_[1]; */
-      /* tf1.transform.translation.z = pos_hector_[2]; */
-      /* tf1.transform.rotation.w    = ori_hector_[0]; */
-      /* tf1.transform.rotation.x    = ori_hector_[1]; */
-      /* tf1.transform.rotation.y    = ori_hector_[2]; */
-      /* tf1.transform.rotation.z    = ori_hector_[3]; */
-      /* tf_broadcaster_->sendTransform(tf1); */
-
-      tf1.header.stamp            = this->get_clock()->now();
-      tf1.header.frame_id         = hector_frame_;
-      tf1.child_frame_id          = fcu_frame_;
-      tf1.transform.translation.x = 0;
-      tf1.transform.translation.y = 0;
-      tf1.transform.translation.z = 0;
-      q.setRPY(0, 0, 0);
-      tf1.transform.rotation.w = q.getW();
-      tf1.transform.rotation.x = q.getX();
-      tf1.transform.rotation.y = q.getY();
-      tf1.transform.rotation.z = q.getZ();
-      tf_broadcaster_->sendTransform(tf1);
-      return;
-    }
-    //}
-
-    RCLCPP_ERROR(this->get_logger(), "[%s]: '%s' is not a valid source of odometry", this->get_name(), estimator_source_.name.c_str());
   }
 }
 //}
@@ -1247,18 +1089,6 @@ std_msgs::msg::ColorRGBA Odometry2::generateColor(const double r, const double g
   c.a = a;
   return c;
 }
-//}
-
-/* //{ isValidType */
-bool Odometry2::isValidType(const fog_msgs::msg::EstimatorType &type) {
-
-  if (type.type == fog_msgs::msg::EstimatorType::GPS || type.type == fog_msgs::msg::EstimatorType::HECTOR) {
-    return true;
-  }
-
-  return false;
-}
-
 //}
 
 /*isValidGate() //{*/
@@ -1720,25 +1550,6 @@ void Odometry2::checkHectorReliability() {
 std::string Odometry2::printOdometryDiag() {
 
   std::string s_diag;
-
-  fog_msgs::msg::EstimatorType type;
-
-  {
-    std::scoped_lock lock(mutex_estimator_source_);
-
-    type.type = estimator_source_.type;
-  }
-
-  s_diag += "Current estimator type: ";
-  s_diag += std::to_string(type.type);
-
-  if (type.type == fog_msgs::msg::EstimatorType::GPS) {
-    s_diag += "GPS";
-  } else if (type.type == fog_msgs::msg::EstimatorType::HECTOR) {
-    s_diag += "HECTOR";
-  } else {
-    s_diag += "UNKNOWN";
-  }
 
   return s_diag;
 }

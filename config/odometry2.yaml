@@ -1,5 +1,4 @@
 param_namespace:
-  odometry_source: "GPS"
   odometry_loop_rate: 100.0 # [Hz]
 
 # gps # 
