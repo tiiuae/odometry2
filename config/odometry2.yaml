@@ -1,7 +1,26 @@
-param_namespace:
+odometry2:
   odometry_loop_rate: 100.0 # [Hz]
 
-# gps # 
+# px4 # #{
+  px4:
+    EKF2_AID_MASK: 321 # default mask - will be changed according to hector and gps reliability
+    EKF2_EV_DELAY: 50.0 # hector measurements delay
+    EKF2_EV_NOISE_MD: 1 # use px4 covariances
+    EKF2_EVP_NOISE: 0.05 # position measurement covariance [m]
+    EKF2_EVV_NOISE: 0.05 # velocity measurement covariance [ms-1]
+
+    EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
+    EKF2_RNG_A_HMAX: 2.0 # Max height to use ranger for fusion in aid mode
+
+    MPC_XY_CRUISE: 0.4 # Max speed for mission mode [ms-1]
+    MC_YAWRATE_MAX: 20.0 # Max yaw rate [degs-1]
+    MPC_ACC_HOR: 0.5 # 0.4 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_ACC_DOWN_MAX: 1.0 #0.5 # Max acceleration for vertical move down [ms-2] 3.0
+    MPC_ACC_UP_MAX: 1.0 #0.5 # Max acceleration for vertical move up [ms-2] 4.0
+
+# # #}
+
+# gps # #{ 
   gps:
     use_gps: true
     eph_max: 2.0 # max deviation allowed to use gps source [m]
@@ -13,8 +32,8 @@ param_namespace:
   hector:
     use_hector: true
     num_init_msgs: 10 # number of messages to skip before using hector messages
-    msg_interval_warn: 0.25 # interval between messages that gives warning [s]
-    msg_interval_max: 0.5 # max interval between messages before not reliable hector [s]
+    msg_interval_warn: 0.35 # interval between messages that gives warning [s]
+    msg_interval_max: 0.7 # max interval between messages before not reliable hector [s]
     max_velocity: 4.0 # max velocity of the hector estimator to believe hector [ms-1]
     max_position_jump: 2.0 # max position difference between consequent hector poses. 4 is default [m]
     reset_wait: 5.0 # wait for availability of next hector reset [s]
@@ -69,6 +88,6 @@ param_namespace:
 
     process_covariance: # the process covariance used in the prediction step of the Kalman filter
       pos: 0.01
-      vel: 100000.0
+      vel: 10000.0
       acc: 0.1
 # # #}

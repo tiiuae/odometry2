@@ -56,10 +56,11 @@ def generate_launch_description():
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
 
-                    ("~/get_px4_param_int", "~/get_px4_param_int"),
-                    ("~/set_px4_param_int", "~/set_px4_param_int"),
+                    ("~/get_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/get_px4_param_int"),
+                    ("~/set_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_int"),
+                    ("~/set_px4_param_float", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_float"),
                     ("~/reset_hector_service_out", "~/reset_hector_service"),
-                    ("~/land_out", "/"+DRONE_DEVICE_ID+"/control_interface/land"),
+                    ("~/land_out", "/" + DRONE_DEVICE_ID + "/control_interface/land"),
 
                     ("~/reset_hector_service_in", "~/reset_hector_service"),
 
