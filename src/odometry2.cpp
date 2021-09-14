@@ -194,6 +194,11 @@ private:
   std::atomic_bool    got_baro_alt_correction_ = false;
   rclcpp::Time        time_baro_prev_;
 
+  std::vector<float> garmin_buffer_z_;
+  std::vector<float> garmin_buffer_vz_;
+  int                garmin_buffer_size_;
+
+
   // Heading estimation
   std::shared_ptr<HeadingEstimator> hector_hdg_estimator_;
   std::vector<hdg_R_t>              R_hdg_vec_;
@@ -326,6 +331,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   parse_param("hector.max_velocity", hector_max_velocity_);
   parse_param("hector.max_position_jump", hector_max_position_jump_);
 
+  parse_param("hector.garmin_msg_delay", garmin_buffer_size_);
+
   int   param_int;
   float param_float;
   parse_param("px4.EKF2_AID_MASK", param_int);
@@ -334,6 +341,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   px4_params_int.push_back(px4_int("EKF2_EV_NOISE_MD", param_int));
   parse_param("px4.EKF2_RNG_AID", param_int);
   px4_params_int.push_back(px4_int("EKF2_RNG_AID", param_int));
+  parse_param("px4.EKF2_HGT_MODE", param_int);
+  px4_params_int.push_back(px4_int("EKF2_HGT_MODE", param_int));
 
   parse_param("px4.EKF2_EV_DELAY", param_float);
   px4_params_float.push_back(px4_float("EKF2_EV_DELAY", param_float));
@@ -647,7 +656,9 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 
 /* hectorOdomCallback //{ */
 void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg) {
-  if (!is_initialized_) {
+
+  // If not initialized, or hector not used
+  if (!is_initialized_) {  //|| !hector_use_) {
     return;
   }
 
@@ -1026,6 +1037,7 @@ void Odometry2::odometryRoutine(void) {
     publishLocalOdom();
 
 
+    /* if (hector_use_) { */
     if (hector_reliable_) {
       updateEstimators();
       publishOdometry();
@@ -1033,6 +1045,7 @@ void Odometry2::odometryRoutine(void) {
     } else {
       resetHector();
     }
+    /* } */
   }
 }
 //}
@@ -1269,10 +1282,12 @@ void Odometry2::pixhawkEkfUpdate() {
     request->value          = 1;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
-  } else if (!gps_reliable_ && !hector_reliable_) {
+  } else if (!gps_reliable_ && !hector_reliable_ && (gps_use_ || hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
     auto call_result = land_service_->async_send_request(request);
+    gps_use_         = false;
+    hector_use_      = false;
   }
   /* } */
 }
@@ -1470,7 +1485,15 @@ void Odometry2::publishOdometry() {
 
     visual_odometry_.x = tf.pose.position.x;
     visual_odometry_.y = tf.pose.position.y;
-    visual_odometry_.z = tf.pose.position.z;
+    /* visual_odometry_.z = tf.pose.position.z; */
+
+    garmin_buffer_z_.insert(garmin_buffer_z_.begin(), tf.pose.position.z);
+    if (garmin_buffer_z_.size() > garmin_buffer_size_) {
+      visual_odometry_.z = garmin_buffer_z_.back();
+      garmin_buffer_z_.pop_back();
+    } else {
+      visual_odometry_.z = 0.0;
+    }
 
     tf2::Quaternion q_orig, q_new, q_rot;
 
@@ -1515,7 +1538,15 @@ void Odometry2::publishOdometry() {
 
     visual_odometry_.vx = global_vel.vector.x;
     visual_odometry_.vy = global_vel.vector.y;
-    visual_odometry_.vz = global_vel.vector.z;
+    /* visual_odometry_.vz = global_vel.vector.z; */
+
+    garmin_buffer_vz_.insert(garmin_buffer_vz_.begin(), global_vel.vector.z);
+    if (garmin_buffer_vz_.size() > garmin_buffer_size_) {
+      visual_odometry_.vz = garmin_buffer_vz_.back();
+      garmin_buffer_vz_.pop_back();
+    } else {
+      visual_odometry_.vz = 0.0;
+    }
 
     msg.twist.twist.linear.x = global_vel.vector.x;
     msg.twist.twist.linear.y = global_vel.vector.y;
