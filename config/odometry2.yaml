@@ -3,10 +3,10 @@ odometry2:
 
 # px4 # #{
   px4:
-    EKF2_AID_MASK: 321 # default mask - will be changed according to hector and gps reliability
-    EKF2_EV_DELAY: 500.0 # hector measurements delay # 500
+    EKF2_AID_MASK: 329 # default mask - will be changed according to hector and gps reliability
+    EKF2_EV_DELAY: 100.0 # hector measurements delay # 500
     EKF2_EV_NOISE_MD: 1 # use px4 covariances
-    EKF2_EVP_NOISE: 0.01 # position measurement covariance [m]
+    EKF2_EVP_NOISE: 0.05 # position measurement covariance [m]
     EKF2_EVV_NOISE: 0.01 # velocity measurement covariance [ms-1]
 
     EKF2_RNG_AID: 0 # Using the range sensor to estimate height if specific conditions are met
@@ -14,9 +14,9 @@ odometry2:
 
     EKF2_HGT_MODE: 0 # Source of height estimation 0 - barometer pressure
 
-    MPC_XY_CRUISE: 0.4 # Max speed for mission mode [ms-1]
+    MPC_XY_CRUISE: 1.0 # Max speed for mission mode [ms-1]
     MC_YAWRATE_MAX: 20.0 # Max yaw rate [degs-1]
-    MPC_ACC_HOR: 0.5 # 0.4 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_ACC_HOR: 0.7 # 0.4 # Max acceleration for horizontal movement [ms-2] 3.0
     MPC_ACC_DOWN_MAX: 1.0 #0.5 # Max acceleration for vertical move down [ms-2] 3.0
     MPC_ACC_UP_MAX: 1.0 #0.5 # Max acceleration for vertical move up [ms-2] 4.0
 
@@ -33,12 +33,12 @@ odometry2:
 # hector # #{
   hector:
     use_hector: true
-    garmin_msg_delay: 40 # number of msgs to postpone garmin measurements 400ms = 40mgs * 10ms. 10 ms is publish rate of garmin msgs
+    garmin_msg_delay: 5 # number of msgs to postpone garmin measurements 400ms = 40mgs * 10ms. 10 ms is publish rate of garmin msgs 100 ms is garmin delay base
     num_init_msgs: 10 # number of messages to skip before using hector messages
     msg_interval_warn: 0.35 # interval between messages that gives warning [s]
     msg_interval_max: 0.7 # max interval between messages before not reliable hector [s]
-    max_velocity: 4.0 # max velocity of the hector estimator to believe hector [ms-1]
-    max_position_jump: 2.0 # max position difference between consequent hector poses. 4 is default [m]
+    max_velocity: 2.0 # max velocity of the hector estimator to believe hector [ms-1]
+    max_position_jump: 1.0 # max position difference between consequent hector poses. 4 is default [m]
     reset_wait: 5.0 # wait for availability of next hector reset [s]
     fusion_wait: 3.0 # wait for fusion of the hector data after each reset  [s]
 # # #}

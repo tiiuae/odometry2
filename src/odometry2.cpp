@@ -150,6 +150,7 @@ private:
   float            ori_orig_hector_[4];
   int              c_hector_init_msgs_       = 0;
   int              hector_num_init_msgs_     = 10;
+  int              hector_default_ekf_mask_  = 0;
   float            hector_msg_interval_max_  = 0.0;
   float            hector_msg_interval_warn_ = 0.0;
   double           hector_hdg_previous_      = 0.0;
@@ -335,8 +336,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   int   param_int;
   float param_float;
-  parse_param("px4.EKF2_AID_MASK", param_int);
-  px4_params_int.push_back(px4_int("EKF2_AID_MASK", param_int));
+  parse_param("px4.EKF2_AID_MASK", hector_default_ekf_mask_);
+  px4_params_int.push_back(px4_int("EKF2_AID_MASK", hector_default_ekf_mask_));
   parse_param("px4.EKF2_EV_NOISE_MD", param_int);
   px4_params_int.push_back(px4_int("EKF2_EV_NOISE_MD", param_int));
   parse_param("px4.EKF2_RNG_AID", param_int);
@@ -1266,15 +1267,16 @@ void Odometry2::pixhawkEkfUpdate() {
   auto request        = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
   request->param_name = "EKF2_AID_MASK";
 
-  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 321 && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ && gps_use_ &&
-      hector_use_) {
+  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ &&
+      gps_use_ && hector_use_) {
     set_ekf_bitmask_called_ = true;
-    request->value          = 321;
+    request->value          = hector_default_ekf_mask_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
-  } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 320 && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ && hector_use_) {
+  } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 && !set_ekf_bitmask_called_ &&
+             dt.count() > hector_fusion_wait_ && hector_use_) {
     set_ekf_bitmask_called_ = true;
-    request->value          = 320;
+    request->value          = hector_default_ekf_mask_ - 1;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
   } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && gps_use_) {
