@@ -4,9 +4,9 @@ odometry2:
 # px4 # #{
   px4:
     EKF2_AID_MASK: 329 # default mask - will be changed according to hector and gps reliability
-    EKF2_EV_DELAY: 100.0 # hector measurements delay # 500
+    EKF2_EV_DELAY: 100.0 # hector measurements delay # 100~150
     EKF2_EV_NOISE_MD: 1 # use px4 covariances
-    EKF2_EVP_NOISE: 0.05 # position measurement covariance [m]
+    EKF2_EVP_NOISE: 0.01 # position measurement covariance [m]
     EKF2_EVV_NOISE: 0.01 # velocity measurement covariance [ms-1]
 
     EKF2_RNG_AID: 0 # Using the range sensor to estimate height if specific conditions are met
@@ -33,7 +33,7 @@ odometry2:
 # hector # #{
   hector:
     use_hector: true
-    garmin_msg_delay: 5 # number of msgs to postpone garmin measurements 400ms = 40mgs * 10ms. 10 ms is publish rate of garmin msgs 100 ms is garmin delay base
+    garmin_msg_delay: 0 # number of msgs to postpone garmin measurements 400ms = 40mgs * 10ms. 10 ms is publish rate of garmin msgs 100 ms is garmin delay base
     num_init_msgs: 10 # number of messages to skip before using hector messages
     msg_interval_warn: 0.35 # interval between messages that gives warning [s]
     msg_interval_max: 0.7 # max interval between messages before not reliable hector [s]

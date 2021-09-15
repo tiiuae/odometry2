@@ -659,7 +659,7 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg) {
 
   // If not initialized, or hector not used
-  if (!is_initialized_) {  //|| !hector_use_) {
+  if (!is_initialized_ || !hector_use_) {
     return;
   }
 
@@ -1038,15 +1038,15 @@ void Odometry2::odometryRoutine(void) {
     publishLocalOdom();
 
 
-    /* if (hector_use_) { */
-    if (hector_reliable_) {
-      updateEstimators();
-      publishOdometry();
-      checkHectorReliability();
-    } else {
-      resetHector();
+    if (hector_use_) {
+      if (hector_reliable_) {
+        updateEstimators();
+        publishOdometry();
+        checkHectorReliability();
+      } else {
+        resetHector();
+      }
     }
-    /* } */
   }
 }
 //}
