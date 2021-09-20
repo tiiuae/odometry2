@@ -231,6 +231,7 @@ private:
   // publishers
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_hector_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pixhawk_hector_publisher_;
   /* rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             pixhawk_odom_publisher_; */
   rclcpp::Publisher<px4_msgs::msg::VehicleVisualOdometry>::SharedPtr visual_odom_publisher_;
   rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             gps_sensor_publisher_;
@@ -515,8 +516,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   /*//}*/
 
   // publishers
-  local_odom_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
-  local_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
+  local_odom_publisher_     = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
+  local_hector_publisher_   = this->create_publisher<nav_msgs::msg::Odometry>("~/local_hector_out", 10);
+  pixhawk_hector_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/pixhawk_hector_out", 10);
   /* pixhawk_odom_publisher_ = this->create_publisher<px4_msgs::msg::SensorGps>("~/pixhawk_odom_out", 10); */
   visual_odom_publisher_  = this->create_publisher<px4_msgs::msg::VehicleVisualOdometry>("~/visual_odom_out", 10);
   gps_sensor_publisher_   = this->create_publisher<px4_msgs::msg::SensorGps>("~/sensor_gps_out", 10);
@@ -613,7 +615,7 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
         RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is too low! #%d EPH value: %f", this->get_name(), c_gps_eph_err_, msg->eph);
       }
     }
-  // GPS is getting better
+    // GPS is getting better
   } else if (!gps_reliable_) {
     if (c_gps_eph_good_++ >= gps_msg_good_) {
 
@@ -1190,6 +1192,20 @@ void Odometry2::publishLocalOdom() {
   msg.pose.pose.orientation.y = tf.pose.orientation.y;
   msg.pose.pose.orientation.z = tf.pose.orientation.z;
   local_odom_publisher_->publish(msg);
+
+  // Publish hector in the correct RVIZ orientation visualization
+  msg.header.stamp            = this->get_clock()->now();
+  msg.header.frame_id         = world_frame_;
+  msg.child_frame_id          = hector_frame_;
+  auto tf2                    = transformBetween(hector_frame_, world_frame_);
+  msg.pose.pose.position.x    = tf2.pose.position.x;
+  msg.pose.pose.position.y    = tf2.pose.position.y;
+  msg.pose.pose.position.z    = tf2.pose.position.z;
+  msg.pose.pose.orientation.w = tf.pose.orientation.w;
+  msg.pose.pose.orientation.x = tf.pose.orientation.x;
+  msg.pose.pose.orientation.y = tf.pose.orientation.y;
+  msg.pose.pose.orientation.z = tf.pose.orientation.z;
+  local_hector_publisher_->publish(msg);
 }
 //}
 
@@ -1387,9 +1403,7 @@ void Odometry2::updateEstimators() {
 void Odometry2::publishOdometry() {
 
   nav_msgs::msg::Odometry msg;
-  msg.header.stamp = this->get_clock()->now();
-  /* msg.header.frame_id = world_frame_; */
-  /* msg.child_frame_id  = fcu_frame_; */
+  msg.header.stamp    = this->get_clock()->now();
   msg.header.frame_id = hector_origin_frame_;
   msg.child_frame_id  = hector_frame_;
 
@@ -1445,8 +1459,6 @@ void Odometry2::publishOdometry() {
   ori_hector_[2] = mavros_orientation_.getY();
   ori_hector_[3] = mavros_orientation_.getZ();
 
-  // TODO:: apply inverse rotation
-
   // lateral
   double pos_x, pos_y, pos_z, vel_x, vel_y, acc_x, acc_y;
 
@@ -1468,36 +1480,11 @@ void Odometry2::publishOdometry() {
 
   pos_hector_[2] = pos_z - std::abs(garmin_offset_);
 
-  // TODO:: Change of getting variables into updateEstimators
   publishing_odometry_ = true;
 
   // publish odometry//{
-  msg.pose.pose.position.x = pos_hector_[0];
-  msg.pose.pose.position.y = pos_hector_[1];
-  msg.pose.pose.position.z = pos_hector_[2];
-  /* msg.twist.twist.linear.x    = vel_x; */
-  /* msg.twist.twist.linear.y    = vel_y; */
-  /* msg.twist.twist.linear.z    = vel_z; */
-  msg.pose.pose.orientation.w = ori_hector_[0];
-  msg.pose.pose.orientation.x = ori_hector_[1];
-  msg.pose.pose.orientation.y = ori_hector_[2];
-  msg.pose.pose.orientation.z = ori_hector_[3];
-  /* msg.pose.pose.position.x    = pos_hector_[1]; */
-  /* msg.pose.pose.position.y    = pos_hector_[0]; */
-  /* msg.pose.pose.position.z    = -pos_hector_[2]; */
-  /* msg.twist.twist.linear.x    = vel_y; */
-  /* msg.twist.twist.linear.y    = vel_x; */
-  /* msg.twist.twist.linear.z    = -vel_z; */
-  /* msg.pose.pose.orientation.w = ori_hector_[0]; */
-  /* msg.pose.pose.orientation.x = ori_hector_[1]; */
-  /* msg.pose.pose.orientation.y = ori_hector_[2]; */
-  /* msg.pose.pose.orientation.z = ori_hector_[3]; */
 
-  /* local_hector_publisher_->publish(msg); */
-  /*//}*/
-
-  // publish visual odometry//{
-
+  // Transform pose and orientation
   try {
     auto tf = transformBetween(hector_frame_, ned_origin_frame_);
 
@@ -1508,8 +1495,8 @@ void Odometry2::publishOdometry() {
 
     visual_odometry_.x = tf.pose.position.x;
     visual_odometry_.y = tf.pose.position.y;
-    /* visual_odometry_.z = tf.pose.position.z; */
 
+    // Apply of Garmin message delay
     garmin_buffer_z_.insert(garmin_buffer_z_.begin(), tf.pose.position.z);
     if (garmin_buffer_z_.size() > garmin_buffer_size_) {
       visual_odometry_.z = garmin_buffer_z_.back();
@@ -1518,13 +1505,15 @@ void Odometry2::publishOdometry() {
       visual_odometry_.z = 0.0;
     }
 
-    tf2::Quaternion q_orig, q_new, q_rot;
 
-    tf2::convert(tf.pose.orientation, q_orig);
-    double r = M_PI, p = 0, y = M_PI;
-    q_rot.setRPY(r, p, y);
-    q_new = q_rot * q_orig;  // Calculate the new orientation
-    q_new.normalize();
+    // TODO:: Using hector orientation is not reliable. Using magnetometer orientation
+    /* tf2::Quaternion q_orig, q_new, q_rot; */
+
+    /* tf2::convert(tf.pose.orientation, q_orig); */
+    /* double r = M_PI, p = 0, y = M_PI; */
+    /* q_rot.setRPY(r, p, y); */
+    /* q_new = q_rot * q_orig;  // Calculate the new orientation */
+    /* q_new.normalize(); */
 
     /* visual_odometry_.q[0] = q_new.w(); */
     /* visual_odometry_.q[1] = q_new.x(); */
@@ -1540,13 +1529,21 @@ void Odometry2::publishOdometry() {
     visual_odometry_.q[1] = mavros_orientation_.getX();
     visual_odometry_.q[2] = mavros_orientation_.getY();
     visual_odometry_.q[3] = mavros_orientation_.getZ();
+
+    msg.pose.pose.position.x    = pos_hector_[0];
+    msg.pose.pose.position.y    = pos_hector_[1];
+    msg.pose.pose.position.z    = pos_hector_[2];
+    msg.pose.pose.orientation.w = ori_hector_[0];
+    msg.pose.pose.orientation.x = ori_hector_[1];
+    msg.pose.pose.orientation.y = ori_hector_[2];
+    msg.pose.pose.orientation.z = ori_hector_[3];
   }
   catch (...) {
     std::fill(visual_odometry_.q_offset.begin(), visual_odometry_.q_offset.end(), NAN);
-
     std::fill(visual_odometry_.pose_covariance.begin(), visual_odometry_.pose_covariance.end(), NAN);
   }
 
+  // Transform velocity
   try {
     auto transform_stamped = tf_buffer_->lookupTransform(ned_origin_frame_, hector_origin_frame_, rclcpp::Time(0));
 
@@ -1561,8 +1558,8 @@ void Odometry2::publishOdometry() {
 
     visual_odometry_.vx = global_vel.vector.x;
     visual_odometry_.vy = global_vel.vector.y;
-    /* visual_odometry_.vz = global_vel.vector.z; */
 
+    // Apply of garmin message delay
     garmin_buffer_vz_.insert(garmin_buffer_vz_.begin(), global_vel.vector.z);
     if (garmin_buffer_vz_.size() > garmin_buffer_size_) {
       visual_odometry_.vz = garmin_buffer_vz_.back();
@@ -1578,9 +1575,6 @@ void Odometry2::publishOdometry() {
   catch (...) {
     return;
   }
-  /* visual_odometry_.vx = vel_y; */
-  /* visual_odometry_.vy = vel_x; */
-  /* visual_odometry_.vz = -vel_z; */
 
   visual_odometry_.rollspeed  = NAN;
   visual_odometry_.pitchspeed = NAN;
@@ -1588,36 +1582,7 @@ void Odometry2::publishOdometry() {
 
   std::fill(visual_odometry_.velocity_covariance.begin(), visual_odometry_.velocity_covariance.end(), NAN);
 
-  /* std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now() - time_sync_time_; */
-
-  /* visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000; */
-  /* visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000; */
-
-  /* visual_odometry_.x = pos_hector_[1]; */
-  /* visual_odometry_.y = pos_hector_[0]; */
-  /* visual_odometry_.z = -pos_hector_[2]; */
-
-  /* visual_odometry_.q[0] = mavros_orientation_.getW(); */
-  /* visual_odometry_.q[1] = mavros_orientation_.getX(); */
-  /* visual_odometry_.q[2] = mavros_orientation_.getY(); */
-  /* visual_odometry_.q[3] = mavros_orientation_.getZ(); */
-
-  /* std::fill(visual_odometry_.q_offset.begin(), visual_odometry_.q_offset.end(), NAN); */
-
-  /* std::fill(visual_odometry_.pose_covariance.begin(), visual_odometry_.pose_covariance.end(), NAN); */
-
-  /* visual_odometry_.vx = vel_y; */
-  /* visual_odometry_.vy = vel_x; */
-  /* visual_odometry_.vz = -vel_z; */
-
-  /* visual_odometry_.rollspeed  = NAN; */
-  /* visual_odometry_.pitchspeed = NAN; */
-  /* visual_odometry_.yawspeed   = NAN; */
-
-  /* std::fill(visual_odometry_.velocity_covariance.begin(), visual_odometry_.velocity_covariance.end(), NAN); */
-
-  local_hector_publisher_->publish(msg);
-
+  pixhawk_hector_publisher_->publish(msg);
   visual_odom_publisher_->publish(visual_odometry_);
 
   /*//}*/
