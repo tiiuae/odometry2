@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <numeric>
 #include <tuple>
 #include <geometry_msgs/msg/detail/pose_stamped__struct.hpp>
 #include <mutex>
@@ -171,6 +172,12 @@ private:
   std::atomic<std::int64_t>                          timestamp_raw_;
   std::chrono::time_point<std::chrono::system_clock> time_sync_time_;
 
+  // GARMIN
+  int                garmin_num_init_msgs_ = 0;
+  int                garmin_num_avg_offset_msgs_ = 0;
+  int                c_garmin_init_msgs_   = 0;
+  float              garmin_offset_        = 0;
+  std::vector<float> garmin_init_values_;
 
   // Vehicle local position
   std::atomic<float> pos_local_[3];
@@ -332,7 +339,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   parse_param("hector.max_velocity", hector_max_velocity_);
   parse_param("hector.max_position_jump", hector_max_position_jump_);
 
-  parse_param("hector.garmin_msg_delay", garmin_buffer_size_);
+  parse_param("altitude.garmin_msg_delay", garmin_buffer_size_);
+  parse_param("altitude.avg_offset_msgs", garmin_num_avg_offset_msgs_);
+  parse_param("altitude.num_init_msgs", garmin_num_init_msgs_);
 
   int   param_int;
   float param_float;
@@ -683,7 +692,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   /*When receive the 0,0 pose, reset all requires states//{*/
   if (hector_reset_called_ && msg->pose.position.x == 0 && msg->pose.position.x == 0) {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Hector reinitalizied!", this->get_name());
+    RCLCPP_WARN(this->get_logger(), "[%s]: Hector reinitalizied!", this->get_name());
 
     // Reset HECTOR heading
     hector_hdg_estimator_->setState(0, 0);
@@ -756,7 +765,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     ori_orig_hector_[1] = tf.pose.orientation.x;
     ori_orig_hector_[2] = tf.pose.orientation.y;
     ori_orig_hector_[3] = tf.pose.orientation.z;
-    RCLCPP_INFO(this->get_logger(), "[%s]: Hector origin coordinates set - x: %f y: %f z: %f, w: %f, x: %f, y: %f, z: %f", this->get_name(),
+    RCLCPP_WARN(this->get_logger(), "[%s]: Hector origin coordinates set - x: %f y: %f z: %f, w: %f, x: %f, y: %f, z: %f", this->get_name(),
                 pos_orig_hector_[0], pos_orig_hector_[1], pos_orig_hector_[2], ori_orig_hector_[0], ori_orig_hector_[1], ori_orig_hector_[2],
                 ori_orig_hector_[3]);
     hector_tf_setup_ = true;
@@ -988,6 +997,7 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
   if (!is_initialized_) {
     return;
   }
+
   getting_garmin_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name());
 
@@ -1000,6 +1010,24 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 
   if (!isValidGate(measurement, _garmin_min_valid_alt_, _garmin_max_valid_alt_, "garmin range")) {
     return;
+  }
+
+  //Skip number of messages before system initialization
+  if (c_garmin_init_msgs_++ < garmin_num_init_msgs_) {
+    RCLCPP_INFO(this->get_logger(), "[%s]: Garmin height #%d - z: %f", this->get_name(), c_garmin_init_msgs_, measurement);
+    return;
+  }
+
+  // Gather offset amount of msgs
+  if (garmin_init_values_.size() < garmin_num_avg_offset_msgs_) {
+    garmin_init_values_.push_back(measurement);
+    return;
+  }
+
+  // Set the garmin offset
+  if (garmin_offset_ == 0) {
+    garmin_offset_ = std::reduce(garmin_init_values_.begin(), garmin_init_values_.end()) / garmin_init_values_.size();
+    RCLCPP_WARN(this->get_logger(), "[%s]: Garmin offset - z: %f", this->get_name(), garmin_offset_);
   }
 
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
@@ -1445,7 +1473,7 @@ void Odometry2::publishOdometry() {
   garmin_alt_estimator_->getState(0, pos_z);
   garmin_alt_estimator_->getState(1, vel_z);
 
-  pos_hector_[2] = pos_z;
+  pos_hector_[2] = pos_z - std::abs(garmin_offset_);
 
   // TODO:: Change of getting variables into updateEstimators
   publishing_odometry_ = true;
