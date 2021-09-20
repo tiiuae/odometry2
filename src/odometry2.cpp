@@ -173,10 +173,10 @@ private:
   std::chrono::time_point<std::chrono::system_clock> time_sync_time_;
 
   // GARMIN
-  int                garmin_num_init_msgs_ = 0;
+  int                garmin_num_init_msgs_       = 0;
   int                garmin_num_avg_offset_msgs_ = 0;
-  int                c_garmin_init_msgs_   = 0;
-  float              garmin_offset_        = 0;
+  int                c_garmin_init_msgs_         = 0;
+  float              garmin_offset_              = 0;
   std::vector<float> garmin_init_values_;
 
   // Vehicle local position
@@ -602,34 +602,27 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
 
   // GPS quality is getting lower
   if (msg->eph > gps_eph_max_) {
-
     if (gps_reliable_) {
-
-      RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is too low! EPH value: %f, msg num#%d", this->get_name(), msg->eph, c_gps_eph_err_);
-
-      if (c_gps_eph_err_ >= gps_msg_err_) {
+      if (c_gps_eph_err_++ >= gps_msg_err_) {
 
         RCLCPP_WARN(this->get_logger(), "[%s] Turning off GPS usage!", this->get_name(), msg->eph);
         gps_reliable_  = false;
         c_gps_eph_err_ = 0;
 
       } else {
-        c_gps_eph_err_++;
+        RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is too low! #%d EPH value: %f", this->get_name(), c_gps_eph_err_, msg->eph);
       }
     }
-    // GPS is getting better
+  // GPS is getting better
   } else if (!gps_reliable_) {
-
-    RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is improving! EPH value: %f, msg num #%d", this->get_name(), msg->eph, c_gps_eph_good_);
-
-    if (c_gps_eph_good_ >= gps_msg_good_) {
+    if (c_gps_eph_good_++ >= gps_msg_good_) {
 
       RCLCPP_WARN(this->get_logger(), "[%s] Turning on GPS usage!", this->get_name(), msg->eph);
       gps_reliable_   = true;
       c_gps_eph_good_ = 0;
 
     } else {
-      c_gps_eph_good_++;
+      RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is improving! #%d EPH value: %f", this->get_name(), c_gps_eph_good_, msg->eph);
     }
   }
 }
@@ -1012,7 +1005,7 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
     return;
   }
 
-  //Skip number of messages before system initialization
+  // Skip number of messages before system initialization
   if (c_garmin_init_msgs_++ < garmin_num_init_msgs_) {
     RCLCPP_INFO(this->get_logger(), "[%s]: Garmin height #%d - z: %f", this->get_name(), c_garmin_init_msgs_, measurement);
     return;
