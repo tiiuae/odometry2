@@ -129,16 +129,17 @@ private:
   std::atomic_bool       set_initial_px4_params_ = false;
 
   // GPS
-  bool             gps_use_ = false;
+  bool             gps_use_ = true;
   float            pos_gps_[3];
   float            ori_gps_[4];
-  int              c_gps_init_msgs_ = 0;
-  float            gps_eph_max_     = 0;
-  int              gps_msg_good_    = 0;
-  int              gps_msg_err_     = 0;
-  int              c_gps_eph_err_   = 0;
-  int              c_gps_eph_good_  = 0;
-  std::atomic_bool gps_reliable_    = false;
+  int              c_gps_init_msgs_   = 0;
+  float            gps_eph_max_       = 0;
+  int              gps_msg_good_      = 0;
+  int              gps_msg_err_       = 0;
+  int              c_gps_eph_err_     = 0;
+  int              c_gps_eph_good_    = 0;
+  int              gps_num_init_msgs_ = 0;
+  std::atomic_bool gps_reliable_      = false;
 
   // HECTOR
   bool             hector_use_ = false;
@@ -150,7 +151,7 @@ private:
   float            pos_orig_hector_[3];
   float            ori_orig_hector_[4];
   int              c_hector_init_msgs_       = 0;
-  int              hector_num_init_msgs_     = 10;
+  int              hector_num_init_msgs_     = 0;
   int              hector_default_ekf_mask_  = 0;
   float            hector_msg_interval_max_  = 0.0;
   float            hector_msg_interval_warn_ = 0.0;
@@ -225,8 +226,10 @@ private:
 
   // Odometry switch
   std::atomic_int  current_ekf_bitmask_    = 0;
+  std::atomic_int  current_hgt_mode_       = 0;
   std::atomic_bool get_ekf_bitmask_called_ = false;
   std::atomic_bool set_ekf_bitmask_called_ = false;
+  std::atomic_bool set_ekf_hgt_called_     = false;
 
   // publishers
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
@@ -292,7 +295,6 @@ private:
   void pixhawkEkfUpdate();
 
   geometry_msgs::msg::PoseStamped transformBetween(std::string frame_from, std::string frame_to);
-  std_msgs::msg::ColorRGBA        generateColor(const double r, const double g, const double b, const double a);
 
   // timers
   rclcpp::CallbackGroup::SharedPtr                   callback_group_;
@@ -327,10 +329,11 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   bool callbacks_enabled_ = false;
   parse_param("odometry_loop_rate", odometry_loop_rate_);
-  parse_param("gps.use_gps", gps_use_);
+  /* parse_param("gps.use_gps", gps_use_); */
   parse_param("gps.eph_max", gps_eph_max_);
   parse_param("gps.msg_good", gps_msg_good_);
   parse_param("gps.msg_err", gps_msg_err_);
+  parse_param("gps.num_init_msgs", gps_num_init_msgs_);
   parse_param("hector.use_hector", hector_use_);
   parse_param("hector.num_init_msgs", hector_num_init_msgs_);
   parse_param("hector.msg_interval_max", hector_msg_interval_max_);
@@ -586,7 +589,7 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
   }
 
   // wait for gps convergence after bootup
-  if (c_gps_init_msgs_++ < 10) {
+  if (c_gps_init_msgs_++ < gps_num_init_msgs_) {
     RCLCPP_INFO(this->get_logger(), "[%s]: GPS pose #%d - lat: %f lon: %f", this->get_name(), c_gps_init_msgs_, msg->lat, msg->lon);
     c_gps_init_msgs_++;
     return;
@@ -597,9 +600,8 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
     ref.latitude_deg  = msg->lat * 1e-7;
     ref.longitude_deg = msg->lon * 1e-7;
 
-    getting_gps_ = true;
-    RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS!", this->get_name());
-    RCLCPP_INFO(this->get_logger(), "[%s] GPS origin - lat: %f ; lon: %f", this->get_name(), ref.latitude_deg, ref.longitude_deg);
+    RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS! Reliability check later", this->get_name());
+    RCLCPP_WARN(this->get_logger(), "[%s] GPS origin - lat: %f ; lon: %f", this->get_name(), ref.latitude_deg, ref.longitude_deg);
   }
 
   // GPS quality is getting lower
@@ -627,6 +629,7 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
       RCLCPP_WARN(this->get_logger(), "[%s] GPS quality is improving! #%d EPH value: %f", this->get_name(), c_gps_eph_good_, msg->eph);
     }
   }
+  getting_gps_ = true;
 }
 //}
 
@@ -801,7 +804,7 @@ bool Odometry2::getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Re
   }
   if (odom_ready_) {
     response->value = true;
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: getOdometry service responded!", this->get_name());
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Odometry available responded!", this->get_name());
 
   } else {
     response->value = false;
@@ -818,7 +821,7 @@ bool Odometry2::getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin
   if (!is_initialized_) {
     return false;
   }
-  if (getting_gps_) {
+  if (ref.latitude_deg != 0.0 && ref.longitude_deg != 0.0) {
     response->latitude  = ref.latitude_deg;
     response->longitude = ref.longitude_deg;
     response->success   = true;
@@ -900,6 +903,9 @@ bool Odometry2::setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4Param
     if (result->param_name == "EKF2_AID_MASK") {
       current_ekf_bitmask_    = result->value;
       set_ekf_bitmask_called_ = false;
+    } else if (result->param_name == "EKF2_HGT_MODE") {
+      current_hgt_mode_   = result->value;
+      set_ekf_hgt_called_ = false;
     }
     return true;
   } else {
@@ -907,6 +913,8 @@ bool Odometry2::setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4Param
                  result->message.c_str());
     if (result->param_name == "EKF2_AID_MASK") {
       set_ekf_bitmask_called_ = false;
+    } else if (result->param_name == "EKF2_HGT_MODE") {
+      set_ekf_hgt_called_ = false;
     }
     return false;
   }
@@ -1041,7 +1049,8 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
 
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
-  if (is_initialized_ && getting_pixhawk_odom_ && getting_gps_) {
+
+  if (is_initialized_ && getting_gps_) {
 
     if (!set_initial_px4_params_) {
       setInitialPx4Params();
@@ -1228,17 +1237,6 @@ geometry_msgs::msg::PoseStamped Odometry2::transformBetween(std::string frame_fr
 }
 //}
 
-/* generateColor//{ */
-std_msgs::msg::ColorRGBA Odometry2::generateColor(const double r, const double g, const double b, const double a) {
-  std_msgs::msg::ColorRGBA c;
-  c.r = r;
-  c.g = g;
-  c.b = b;
-  c.a = a;
-  return c;
-}
-//}
-
 /*isValidGate() //{*/
 bool Odometry2::isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name) {
 
@@ -1286,47 +1284,69 @@ bool Odometry2::setInitialPx4Params() {
 }
 
 /*//}*/
+
 /* pixhawkEkfUpdate //{*/
 void Odometry2::pixhawkEkfUpdate() {
 
+  // Give some time before switching to hector - confirm reliability
   std::chrono::duration<double> dt = std::chrono::system_clock::now() - hector_reset_called_time_;
 
-  // TODO:: If everything to false, it will keep the previous settings without any change.
+  auto request = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
 
-  /* // Initialize the bitmask value */
-  /* if (current_ekf_bitmask_ == 0 && !get_ekf_bitmask_called_) { */
-  /*   get_ekf_bitmask_called_ = true; */
-  /*   auto request            = std::make_shared<fog_msgs::srv::GetPx4ParamInt::Request>(); */
-  /*   request->param_name     = "EKF2_AID_MASK"; */
-  /*   auto call_result        = get_px4_param_int_->async_send_request(request, std::bind(&Odometry2::getPx4IntParamCallback, this, std::placeholders::_1)); */
-  /*   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Get EKF2 aid mask called", this->get_name()); */
-  /* } else { */
-  auto request        = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
-  request->param_name = "EKF2_AID_MASK";
+  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
+      dt.count() > hector_fusion_wait_ && gps_use_ && hector_use_) {
 
-  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ && !set_ekf_bitmask_called_ && dt.count() > hector_fusion_wait_ &&
-      gps_use_ && hector_use_) {
     set_ekf_bitmask_called_ = true;
-    request->value          = hector_default_ekf_mask_;
+    set_ekf_hgt_called_     = true;
+
+    request->param_name = "EKF2_AID_MASK";
+    request->value      = hector_default_ekf_mask_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
-  } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 && !set_ekf_bitmask_called_ &&
+
+    request->param_name = "EKF2_HGT_MODE";
+    request->value      = 3;
+    RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
+    call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+
+  } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
              dt.count() > hector_fusion_wait_ && hector_use_) {
+
     set_ekf_bitmask_called_ = true;
-    request->value          = hector_default_ekf_mask_ - 1;
+    set_ekf_hgt_called_     = true;
+
+    request->param_name = "EKF2_AID_MASK";
+    request->value      = hector_default_ekf_mask_ - 1;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
-  } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && gps_use_) {
+
+    request->param_name = "EKF2_HGT_MODE";
+    request->value      = 3;
+    RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
+    call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+
+  } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
+             gps_use_) {
+
     set_ekf_bitmask_called_ = true;
-    request->value          = 1;
+    set_ekf_hgt_called_     = true;
+
+    request->param_name = "EKF2_AID_MASK";
+    request->value      = 1;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+
+    request->param_name = "EKF2_HGT_MODE";
+    request->value      = 0;
+    RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
+    call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
+
   } else if (!gps_reliable_ && !hector_reliable_ && (gps_use_ || hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
-    auto call_result = land_service_->async_send_request(request);
-    gps_use_         = false;
-    hector_use_      = false;
+    land_service_->async_send_request(request);
+    gps_use_    = false;
+    hector_use_ = false;
   }
   /* } */
 }

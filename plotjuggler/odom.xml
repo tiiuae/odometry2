@@ -1,264 +1,264 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root version="2.3.8">
  <tabbed_widget parent="main_window" name="Main Window">
-  <Tab containers="1" tab_name="Position">
+  <Tab tab_name="Position" containers="1">
    <Container>
-    <DockSplitter count="3" sizes="0.333684;0.332632;0.333684" orientation="-">
+    <DockSplitter orientation="-" count="3" sizes="0.333684;0.332632;0.333684">
      <DockArea name="Normal X">
       <plot mode="TimeSeries" style="Lines">
-       <range right="5.555449" top="0.009313" bottom="0.002007" left="0.000000"/>
+       <range right="7.381467" top="0.138312" left="0.000000" bottom="0.002449"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/y" color="#0500ff"/>
-       <curve name="/ssrc_fog_x/slam_out_pose/pose/position/x" color="#1aff00"/>
-       <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/y" color="#ff8500"/>
+       <curve color="#0500ff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/y"/>
+       <curve color="#1aff00" name="/ssrc_fog_x/slam_out_pose/pose/position/x"/>
+       <curve color="#ff8500" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/y"/>
       </plot>
      </DockArea>
      <DockArea name="Normal Y">
       <plot mode="TimeSeries" style="Lines">
-       <range right="5.555449" top="0.005797" bottom="-0.009551" left="0.000000"/>
+       <range right="7.381467" top="0.008345" left="0.000000" bottom="-0.018516"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/x" color="#0000ff"/>
-       <curve name="/ssrc_fog_x/slam_out_pose/pose/position/y" color="#00ff06"/>
-       <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/x" color="#ff6f00"/>
+       <curve color="#0000ff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/x"/>
+       <curve color="#00ff06" name="/ssrc_fog_x/slam_out_pose/pose/position/y"/>
+       <curve color="#ff6f00" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/x"/>
       </plot>
      </DockArea>
      <DockArea name="Down Z">
       <plot mode="TimeSeries" style="Lines">
-       <range right="5.555449" top="0.013686" bottom="-0.122276" left="0.000000"/>
+       <range right="7.381467" top="0.012375" left="0.000000" bottom="-0.124070"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/garmin/range/range" color="#00f00d">
+       <curve color="#00f00d" name="/ssrc_fog_x/garmin/range/range">
         <transform alias="/ssrc_fog_x/garmin/range/range[Scale/Offset]" name="Scale/Offset">
-         <options value_scale="-1.0" value_offset="0" time_offset="0"/>
+         <options time_offset="0" value_scale="-1.0" value_offset="0"/>
         </transform>
        </curve>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/z" color="#0e00ff"/>
-       <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/z" color="#ff6e00"/>
+       <curve color="#0e00ff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/z"/>
+       <curve color="#ff6e00" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/z"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="Speed">
+  <Tab tab_name="Speed" containers="1">
    <Container>
-    <DockSplitter count="3" sizes="0.35;0.35;0.3" orientation="-">
+    <DockSplitter orientation="-" count="3" sizes="0.333684;0.332632;0.333684">
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="1.003700" top="0.005389" bottom="-0.002362" left="0.000000"/>
+       <range right="6.637778" top="0.014038" left="0.001546" bottom="-0.011069"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vx" color="#1900ff"/>
-       <curve name="/ssrc_fog_x/odometry2/local_hector/twist/twist/linear/x" color="#00ff04"/>
+       <curve color="#1900ff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vx"/>
+       <curve color="#1dff00" name="/ssrc_fog_x/odometry2/pixhawk_hector/twist/twist/linear/x"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="1.003700" top="0.002121" bottom="-0.001286" left="0.000000"/>
+       <range right="6.637778" top="0.012092" left="0.001546" bottom="-0.009185"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vy" color="#0e3dff"/>
-       <curve name="/ssrc_fog_x/odometry2/local_hector/twist/twist/linear/y" color="#00ff07"/>
+       <curve color="#0e3dff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vy"/>
+       <curve color="#00ff1a" name="/ssrc_fog_x/odometry2/pixhawk_hector/twist/twist/linear/y"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="1.003700" top="0.011013" bottom="-0.005900" left="0.000000"/>
+       <range right="6.637778" top="0.069382" left="0.001546" bottom="-0.042883"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vz" color="#1400ef"/>
-       <curve name="/ssrc_fog_x/odometry2/local_hector/twist/twist/linear/z" color="#00ff14"/>
+       <curve color="#1400ef" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/vz"/>
+       <curve color="#00ff2b" name="/ssrc_fog_x/odometry2/pixhawk_hector/twist/twist/linear/z"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="Orientation">
+  <Tab tab_name="Orientation" containers="1">
    <Container>
-    <DockSplitter count="4" sizes="0.25;0.25;0.25;0.25" orientation="-">
-     <DockSplitter count="2" sizes="0.5;0.5" orientation="|">
+    <DockSplitter orientation="-" count="4" sizes="0.25;0.25;0.25;0.25">
+     <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.004951" top="0.707172" bottom="0.706078" left="0.000237"/>
+        <range right="0.999398" top="0.719674" left="0.000000" bottom="0.716704"/>
         <limitY/>
-        <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.0" color="#0d00e8"/>
-        <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.0" color="#00ff29"/>
+        <curve color="#0d00e8" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.0"/>
+        <curve color="#00ff29" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.0"/>
        </plot>
       </DockArea>
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.000000" top="1.000000" bottom="0.000000" left="0.000000"/>
-        <limitY/>
-       </plot>
-      </DockArea>
-     </DockSplitter>
-     <DockSplitter count="2" sizes="0.5;0.5" orientation="|">
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="1.004951" top="0.000219" bottom="-0.000202" left="0.000237"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.1" color="#0009ff"/>
-        <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.1" color="#14ff00"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="1.000000" top="1.000000" bottom="0.000000" left="0.000000"/>
+        <range right="1.000000" top="1.000000" left="0.000000" bottom="0.000000"/>
         <limitY/>
        </plot>
       </DockArea>
      </DockSplitter>
-     <DockSplitter count="2" sizes="0.5;0.5" orientation="|">
+     <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.004951" top="0.002263" bottom="0.001676" left="0.000237"/>
+        <range right="0.999398" top="0.001477" left="0.000000" bottom="0.000599"/>
         <limitY/>
-        <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.2" color="#0015ff"/>
-        <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.2" color="#1ac938"/>
+        <curve color="#0009ff" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.1"/>
+        <curve color="#14ff00" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.1"/>
        </plot>
       </DockArea>
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.000000" top="1.000000" bottom="0.000000" left="0.000000"/>
+        <range right="1.000000" top="1.000000" left="0.000000" bottom="0.000000"/>
+        <limitY/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.999398" top="0.001511" left="0.000000" bottom="0.000846"/>
+        <limitY/>
+        <curve color="#0015ff" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.2"/>
+        <curve color="#1ac938" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.2"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="1.000000" top="1.000000" left="0.000000" bottom="0.000000"/>
         <limitY/>
        </plot>
       </DockArea>
      </DockSplitter>
-     <DockSplitter count="2" sizes="0.5;0.5" orientation="|">
+     <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.004951" top="0.708132" bottom="0.707040" left="0.000237"/>
+        <range right="0.999398" top="0.697375" left="0.000000" bottom="0.694311"/>
         <limitY/>
-        <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.3" color="#0004ff"/>
-        <curve name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.3" color="#0eff13"/>
+        <curve color="#0004ff" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/q.3"/>
+        <curve color="#0eff13" name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic/q.3"/>
        </plot>
       </DockArea>
       <DockArea name="...">
        <plot mode="TimeSeries" style="Lines">
-        <range right="1.002148" top="1.573706" bottom="1.570613" left="0.000000"/>
+        <range right="0.997387" top="1.543380" left="0.296456" bottom="1.534928"/>
         <limitY/>
-        <curve name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/heading" color="#1600ff"/>
-       </plot>
-      </DockArea>
-     </DockSplitter>
-    </DockSplitter>
-   </Container>
-  </Tab>
-  <Tab containers="1" tab_name="Timestamps">
-   <Container>
-    <DockSplitter count="2" sizes="0.5;0.5" orientation="-">
-     <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines">
-       <range right="1.002218" top="176862403355.450012" bottom="176861369338.549988" left="0.000237"/>
-       <limitY/>
-       <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/timestamp" color="#1f77b4"/>
-      </plot>
-     </DockArea>
-     <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines">
-       <range right="1.002218" top="16257200.000000" bottom="15198800.000000" left="0.000237"/>
-       <limitY/>
-       <curve name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/timestamp_sample" color="#d62728"/>
-      </plot>
-     </DockArea>
-    </DockSplitter>
-   </Container>
-  </Tab>
-  <Tab containers="1" tab_name="GPS GLobal Position">
-   <Container>
-    <DockSplitter count="3" sizes="0.35;0.35;0.3" orientation="-">
-     <DockSplitter count="3" sizes="0.336957;0.336957;0.326087" orientation="|">
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.119665" top="47.497752" bottom="47.297752" left="0.119574"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/lat" color="#1f77b4"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="473977518.100000" bottom="473977517.900000" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/lat" color="#f14cc1"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="0.010500" bottom="-0.010500" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_n_m_s" color="#1f77b4"/>
-       </plot>
-      </DockArea>
-     </DockSplitter>
-     <DockSplitter count="3" sizes="0.336957;0.336957;0.326087" orientation="|">
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.119665" top="8.645607" bottom="8.445607" left="0.119574"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/lon" color="#d62728"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="85456074.100000" bottom="85456073.900000" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/lon" color="#9467bd"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="0.000250" bottom="-0.010250" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_e_m_s" color="#d62728"/>
-       </plot>
-      </DockArea>
-     </DockSplitter>
-     <DockSplitter count="3" sizes="0.336957;0.336957;0.326087" orientation="|">
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.119665" top="0.283262" bottom="0.083262" left="0.119574"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/alt" color="#1ac938"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="186.250000" bottom="175.750000" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/alt" color="#ff7f0e"/>
-       </plot>
-      </DockArea>
-      <DockArea name="...">
-       <plot mode="TimeSeries" style="Lines">
-        <range right="0.962175" top="0.021000" bottom="-0.021000" left="0.147415"/>
-        <limitY/>
-        <curve name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_d_m_s" color="#1ac938"/>
+        <curve color="#1600ff" name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic/heading"/>
        </plot>
       </DockArea>
      </DockSplitter>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="IMU">
+  <Tab tab_name="Timestamps" containers="1">
    <Container>
-    <DockSplitter count="3" sizes="0.35;0.35;0.3" orientation="-">
+    <DockSplitter orientation="-" count="2" sizes="0.5;0.5">
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="0.000000" top="0.100000" bottom="-0.100000" left="0.000000"/>
+       <range right="0.997450" top="2563178544.725000" left="0.296701" bottom="2562442674.275000"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/SensorAccel_PubSubTopic/x" color="#00ff25"/>
-       <curve name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.0" color="#f70704"/>
+       <curve color="#1f77b4" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/timestamp"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="0.000000" top="0.100000" bottom="-0.100000" left="0.000000"/>
+       <range right="0.997450" top="7801500.000000" left="0.296701" bottom="6730500.000000"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/SensorAccel_PubSubTopic/y" color="#27d627"/>
-       <curve name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.1" color="#f14c4e"/>
+       <curve color="#d62728" name="/ssrc_fog_x/VehicleOdometry_PubSubTopic/timestamp_sample"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="GPS GLobal Position" containers="1">
+   <Container>
+    <DockSplitter orientation="-" count="3" sizes="0.35;0.35;0.3">
+     <DockSplitter orientation="|" count="3" sizes="0.336957;0.336957;0.326087">
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.997302" top="47.397752" left="0.296008" bottom="47.397752"/>
+        <limitY/>
+        <curve color="#1f77b4" name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/lat"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="473977518.100000" left="0.301403" bottom="473977517.900000"/>
+        <limitY/>
+        <curve color="#f14cc1" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/lat"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="0.020500" left="0.301403" bottom="-0.000500"/>
+        <limitY/>
+        <curve color="#1f77b4" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_n_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter orientation="|" count="3" sizes="0.336957;0.336957;0.326087">
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.997302" top="8.545608" left="0.296008" bottom="8.545608"/>
+        <limitY/>
+        <curve color="#d62728" name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/lon"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="85456075.025000" left="0.301403" bottom="85456073.975000"/>
+        <limitY/>
+        <curve color="#9467bd" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/lon"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="0.100000" left="0.301403" bottom="-0.100000"/>
+        <limitY/>
+        <curve color="#d62728" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_e_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter orientation="|" count="3" sizes="0.336957;0.336957;0.326087">
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.997302" top="0.462442" left="0.296008" bottom="0.458699"/>
+        <limitY/>
+        <curve color="#1ac938" name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic/alt"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="181.075000" left="0.301403" bottom="177.925000"/>
+        <limitY/>
+        <curve color="#ff7f0e" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/alt"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot mode="TimeSeries" style="Lines">
+        <range right="0.613150" top="0.100000" left="0.301403" bottom="-0.100000"/>
+        <limitY/>
+        <curve color="#1ac938" name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic/vel_d_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab tab_name="IMU" containers="1">
+   <Container>
+    <DockSplitter orientation="-" count="3" sizes="0.35;0.35;0.3">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines">
+       <range right="0.000000" top="0.100000" left="0.000000" bottom="-0.100000"/>
+       <limitY/>
+       <curve color="#00ff25" name="/ssrc_fog_x/SensorAccel_PubSubTopic/x"/>
+       <curve color="#f70704" name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.0"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot mode="TimeSeries" style="Lines">
-       <range right="0.000000" top="0.100000" bottom="-0.100000" left="0.000000"/>
+       <range right="0.000000" top="0.100000" left="0.000000" bottom="-0.100000"/>
        <limitY/>
-       <curve name="/ssrc_fog_x/SensorAccel_PubSubTopic/z" color="#1ac938"/>
-       <curve name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.2" color="#e80a12"/>
+       <curve color="#27d627" name="/ssrc_fog_x/SensorAccel_PubSubTopic/y"/>
+       <curve color="#f14c4e" name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.1"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines">
+       <range right="0.000000" top="0.100000" left="0.000000" bottom="-0.100000"/>
+       <limitY/>
+       <curve color="#1ac938" name="/ssrc_fog_x/SensorAccel_PubSubTopic/z"/>
+       <curve color="#e80a12" name="/ssrc_fog_x/VehicleAcceleration_PubSubTopic/xyz.2"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -284,24 +284,24 @@
    <discard_large_arrays value="false"/>
    <max_array_size value="true"/>
    <selected_topics>
-    <topic name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic"/>
-    <topic name="/ssrc_fog_x/VehicleOdometry_PubSubTopic"/>
+    <topic name="/ssrc_fog_x/garmin/range"/>
     <topic name="/ssrc_fog_x/SensorGps_PubSubTopic"/>
     <topic name="/ssrc_fog_x/VehicleGlobalPosition_PubSubTopic"/>
+    <topic name="/ssrc_fog_x/VehicleGpsPosition_PubSubTopic"/>
     <topic name="/ssrc_fog_x/VehicleLocalPosition_PubSubTopic"/>
-    <topic name="/ssrc_fog_x/garmin/range"/>
+    <topic name="/ssrc_fog_x/VehicleOdometry_PubSubTopic"/>
+    <topic name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic"/>
     <topic name="/ssrc_fog_x/odometry2/local_hector"/>
     <topic name="/ssrc_fog_x/odometry2/local_odom"/>
-    <topic name="/ssrc_fog_x/slam_out_pose"/>
-    <topic name="/ssrc_fog_x/VehicleVisualOdometry_PubSubTopic"/>
     <topic name="/ssrc_fog_x/odometry2/pixhawk_hector"/>
+    <topic name="/ssrc_fog_x/slam_out_pose"/>
    </selected_topics>
   </plugin>
   <plugin ID="UDP Server"/>
   <plugin ID="WebSocket Server"/>
   <plugin ID="ZMQ Subscriber"/>
-  <plugin status="idle" ID="CSV Exporter"/>
-  <plugin status="idle" ID="ROS2 Topic Re-Publisher"/>
+  <plugin ID="CSV Exporter" status="idle"/>
+  <plugin ID="ROS2 Topic Re-Publisher" status="idle"/>
  </Plugins>
  <!-- - - - - - - - - - - - - - - -->
  <previouslyLoaded_Datafiles/>

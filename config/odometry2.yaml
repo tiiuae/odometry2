@@ -12,7 +12,7 @@ odometry2:
     EKF2_RNG_AID: 0 # Using the range sensor to estimate height if specific conditions are met
     EKF2_RNG_A_HMAX: 2.0 # Max height to use ranger for fusion in aid mode
 
-    EKF2_HGT_MODE: 3 # Source of height estimation 0 - barometer pressure
+    EKF2_HGT_MODE: 3 # Default source of height estimation - will be changed according to hector and gps reliability 3 - vision height mode,  0 - barometer pressure
 
     MPC_XY_CRUISE: 1.0 # Max speed for mission mode [ms-1]
     MC_YAWRATE_MAX: 20.0 # Max yaw rate [degs-1]
@@ -24,7 +24,8 @@ odometry2:
 
 # gps # #{ 
   gps:
-    use_gps: true
+    # use_gps: true
+    num_init_msgs: 5 # number of messages to skip before using gps
     eph_max: 2.0 # max deviation allowed to use gps source [m]
     msg_good: 5 # number of messages to confirm good gps
     msg_err: 5 # number of messages to confirm bad gps
