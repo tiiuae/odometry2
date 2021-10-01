@@ -37,6 +37,7 @@
 #include <px4_msgs/msg/timesync.hpp>
 #include <px4_msgs/msg/sensor_baro.hpp>
 #include <px4_msgs/msg/sensor_gps.hpp>
+#include <px4_msgs/msg/distance_sensor.hpp>
 
 #include "geodesy/utm.h"
 #include "geodesy/wgs84.h"
@@ -139,7 +140,7 @@ private:
   int              c_gps_eph_err_     = 0;
   int              c_gps_eph_good_    = 0;
   int              gps_num_init_msgs_ = 0;
-  std::atomic_bool gps_reliable_      = false;
+  std::atomic_bool gps_reliable_      = true;
 
   // HECTOR
   bool             hector_use_ = false;
@@ -153,6 +154,7 @@ private:
   int              c_hector_init_msgs_       = 0;
   int              hector_num_init_msgs_     = 0;
   int              hector_default_ekf_mask_  = 0;
+  int              hector_default_hgt_mode_  = 0;
   float            hector_msg_interval_max_  = 0.0;
   float            hector_msg_interval_warn_ = 0.0;
   double           hector_hdg_previous_      = 0.0;
@@ -246,7 +248,7 @@ private:
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr    pixhawk_odom_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr         baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
-  rclcpp::Subscription<sensor_msgs::msg::Range>::SharedPtr           garmin_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr           garmin_subscriber_;
 
   // subscriber callbacks
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
@@ -254,7 +256,7 @@ private:
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
   void hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg);
   void baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg);
-  void garminCallback(const sensor_msgs::msg::Range::UniquePtr msg);
+  void garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr msg);
 
   // services provided
   rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr   getting_odom_service_;
@@ -355,8 +357,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   px4_params_int.push_back(px4_int("EKF2_EV_NOISE_MD", param_int));
   parse_param("px4.EKF2_RNG_AID", param_int);
   px4_params_int.push_back(px4_int("EKF2_RNG_AID", param_int));
-  parse_param("px4.EKF2_HGT_MODE", param_int);
-  px4_params_int.push_back(px4_int("EKF2_HGT_MODE", param_int));
+  parse_param("px4.EKF2_HGT_MODE", hector_default_hgt_mode_);
+  px4_params_int.push_back(px4_int("EKF2_HGT_MODE", hector_default_hgt_mode_));
 
   parse_param("px4.EKF2_EV_DELAY", param_float);
   px4_params_float.push_back(px4_float("EKF2_EV_DELAY", param_float));
@@ -537,7 +539,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   hector_pose_subscriber_  = this->create_subscription<geometry_msgs::msg::PoseStamped>("~/hector_pose_in", rclcpp::SystemDefaultsQoS(),
                                                                                        std::bind(&Odometry2::hectorPoseCallback, this, _1));
   garmin_subscriber_ =
-      this->create_subscription<sensor_msgs::msg::Range>("~/garmin_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::garminCallback, this, _1));
+      this->create_subscription<px4_msgs::msg::DistanceSensor>("~/garmin_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::garminCallback, this, _1));
   baro_subscriber_ =
       this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::baroCallback, this, _1));
 
@@ -996,7 +998,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
 //}
 
 /* garminCallback //{ */
-void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
+void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr msg) {
   if (!is_initialized_) {
     return;
   }
@@ -1004,7 +1006,7 @@ void Odometry2::garminCallback(const sensor_msgs::msg::Range::UniquePtr msg) {
   getting_garmin_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name());
 
-  double measurement = msg->range;
+  double measurement = msg->current_distance;
   if (!std::isfinite(measurement)) {
     RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: not finite value detected in variable \"measurement\" (garminCallback) !!!",
                           this->get_name());
@@ -1293,22 +1295,24 @@ void Odometry2::pixhawkEkfUpdate() {
 
   auto request = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
 
-  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
+  //Having both hector and gps
+  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
       dt.count() > hector_fusion_wait_ && gps_use_ && hector_use_) {
 
     set_ekf_bitmask_called_ = true;
     set_ekf_hgt_called_     = true;
 
     request->param_name = "EKF2_AID_MASK";
-    request->value      = hector_default_ekf_mask_;
+    request->value      = 1;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 aid mask, value: %d", this->get_name(), request->value);
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = 3;
+    request->value      = hector_default_hgt_mode_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
+  //Having only hector
   } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
              dt.count() > hector_fusion_wait_ && hector_use_) {
 
@@ -1321,10 +1325,11 @@ void Odometry2::pixhawkEkfUpdate() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = 3;
+    request->value      = hector_default_hgt_mode_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
+  //Having only gps
   } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
              gps_use_) {
 
@@ -1341,6 +1346,7 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
+  //No odometry
   } else if (!gps_reliable_ && !hector_reliable_ && (gps_use_ || hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
@@ -1632,7 +1638,21 @@ void Odometry2::checkHectorReliability() {
       std::scoped_lock lock(mutex_hector_raw_);
       if (std::pow(pos_hector_raw_[0] - pos_hector_raw_prev_[0], 2) > hector_max_position_jump_ ||
           std::pow(pos_hector_raw_[1] - pos_hector_raw_prev_[1], 2) > hector_max_position_jump_) {
-        RCLCPP_WARN(this->get_logger(), "[Odometry2]: Jump detected in Hector Slam pose. orig_x: %f, orig_y: %f, x: %f, y: %f .Not reliable",
+        RCLCPP_WARN(this->get_logger(), "[Odometry2]: Jump detected in Hector Slam pose. orig_x: %f, orig_y: %f, x: %f, y: %f . Not reliable",
+                    pos_hector_raw_prev_[0], pos_hector_raw_prev_[1], pos_hector_raw_[0], pos_hector_raw_[1]);
+        hector_reliable_ = false;
+        return;
+      }
+    }
+    /*//}*/
+
+    // No change in pose at all - no features//{
+
+    {
+      std::scoped_lock lock(mutex_hector_raw_);
+      if (std::pow(pos_hector_raw_[0] - pos_hector_raw_prev_[0], 2) == 0 &&
+          std::pow(pos_hector_raw_[1] - pos_hector_raw_prev_[1], 2) == 0) {
+        RCLCPP_WARN(this->get_logger(), "[Odometry2]: Hector does not have any features. orig_x: %f, orig_y: %f, x: %f, y: %f . Not reliable",
                     pos_hector_raw_prev_[0], pos_hector_raw_prev_[1], pos_hector_raw_[0], pos_hector_raw_[1]);
         hector_reliable_ = false;
         return;

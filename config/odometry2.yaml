@@ -9,8 +9,8 @@ odometry2:
     EKF2_EVP_NOISE: 0.05 # position measurement covariance [m]
     EKF2_EVV_NOISE: 0.05 # velocity measurement covariance [ms-1]
 
-    EKF2_RNG_AID: 0 # Using the range sensor to estimate height if specific conditions are met
-    EKF2_RNG_A_HMAX: 2.0 # Max height to use ranger for fusion in aid mode
+    EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
+    EKF2_RNG_A_HMAX: 5.0 # Max height to use ranger for fusion in aid mode
 
     EKF2_HGT_MODE: 3 # Default source of height estimation - will be changed according to hector and gps reliability 3 - vision height mode,  0 - barometer pressure
 
@@ -35,8 +35,8 @@ odometry2:
   hector:
     use_hector: true
     num_init_msgs: 10 # number of messages to skip before using hector messages
-    msg_interval_warn: 0.35 # interval between messages that gives warning [s]
-    msg_interval_max: 0.7 # max interval between messages before not reliable hector [s]
+    msg_interval_warn: 0.2 # interval between messages that gives warning [s]
+    msg_interval_max: 0.5 # max interval between messages before not reliable hector [s]
     max_velocity: 2.0 # max velocity of the hector estimator to believe hector [ms-1]
     max_position_jump: 1.0 # max position difference between consequent hector poses. 4 is default [m]
     reset_wait: 5.0 # wait for availability of next hector reset [s]
