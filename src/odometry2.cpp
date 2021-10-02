@@ -1131,6 +1131,10 @@ void Odometry2::odometryRoutine(void) {
       checkHectorReliability();
     } else {
       resetHector();
+      if (!gps_use_) {
+        gps_use_ = true;
+        RCLCPP_WARN(this->get_logger(), "[%s]: Hector not reliable, fallback to gps", this->get_name());
+      }
     }
   }
 }
