@@ -27,6 +27,8 @@
 #include <fog_msgs/srv/set_px4_param_int.hpp>
 #include <fog_msgs/srv/get_px4_param_float.hpp>
 #include <fog_msgs/srv/set_px4_param_float.hpp>
+#include <fog_msgs/srv/change_odometry.hpp>
+#include <fog_msgs/msg/odometry_type.hpp>
 #include <nav_msgs/msg/path.hpp>
 
 #include <px4_msgs/msg/vehicle_command.hpp>
@@ -248,7 +250,7 @@ private:
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr    pixhawk_odom_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr         baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
-  rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr           garmin_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr     garmin_subscriber_;
 
   // subscriber callbacks
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
@@ -259,14 +261,17 @@ private:
   void garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr msg);
 
   // services provided
-  rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr   getting_odom_service_;
-  rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr get_origin_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr   reset_hector_service_;
+  rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr        getting_odom_service_;
+  rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr      get_origin_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr        reset_hector_service_;
+  rclcpp::Service<fog_msgs::srv::ChangeOdometry>::SharedPtr change_odometry_source_;
 
   // service callbacks
   bool getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Request> request, std::shared_ptr<fog_msgs::srv::GetBool::Response> response);
   bool getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request, std::shared_ptr<fog_msgs::srv::GetOrigin::Response> response);
   bool resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  bool changeOdometryCallback(const std::shared_ptr<fog_msgs::srv::ChangeOdometry::Request> request,
+                              std::shared_ptr<fog_msgs::srv::ChangeOdometry::Response>      response);
 
   // service clients
   bool getPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::GetPx4ParamInt>::SharedFuture future);
@@ -283,6 +288,7 @@ private:
 
   // internal functions
   bool        isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name);
+  bool        isValidType(const fog_msgs::msg::OdometryType &type);
   bool        setInitialPx4Params();
   std::string printOdometryDiag();
   std::string toUppercase(const std::string &type);
@@ -547,6 +553,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/getting_odom", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
   get_origin_service_   = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
   reset_hector_service_ = this->create_service<std_srvs::srv::Trigger>("~/reset_hector_service_in", std::bind(&Odometry2::resetHectorCallback, this, _1, _2));
+  change_odometry_source_ =
+      this->create_service<fog_msgs::srv::ChangeOdometry>("~/change_odometry_source", std::bind(&Odometry2::changeOdometryCallback, this, _1, _2));
 
   // service clients
   get_px4_param_int_   = this->create_client<fog_msgs::srv::GetPx4ParamInt>("~/get_px4_param_int");
@@ -668,7 +676,7 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg) {
 
   // If not initialized, or hector not used
-  if (!is_initialized_ || !hector_use_) {
+  if (!is_initialized_) {
     return;
   }
 
@@ -880,6 +888,51 @@ bool Odometry2::resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger
 }
 //}
 
+/* changeOdometryCallback //{ */
+bool Odometry2::changeOdometryCallback(const std::shared_ptr<fog_msgs::srv::ChangeOdometry::Request>  request,
+                                       const std::shared_ptr<fog_msgs::srv::ChangeOdometry::Response> response) {
+
+  if (!is_initialized_) {
+    return false;
+  }
+
+  if (!callbacks_enabled_) {
+    response->success = false;
+    response->message = ("Service callbacks are disabled");
+    RCLCPP_WARN(this->get_logger(), "[%s]: Ignoring service all. Callbacks are disabled", this->get_name());
+    return false;
+  }
+
+  // Check whether a valid type was requested
+  if (!isValidType(request->odometry_type)) {
+    RCLCPP_ERROR(this->get_logger(), "[%s]: %d is not a valid odometry type", this->get_name(), request->odometry_type.type);
+    response->success = false;
+    response->message = ("Not a valid odometry type");
+    return false;
+  }
+
+  // Change the estimator
+  if (request->odometry_type.type == 0) {
+    gps_use_    = true;
+    hector_use_ = true;
+    RCLCPP_WARN(this->get_logger(), "[%s]: Changing odometry to automatic GPS or HECTOR", this->get_name());
+  } else if (request->odometry_type.type == 1) {
+    gps_use_    = true;
+    hector_use_ = false;
+    RCLCPP_WARN(this->get_logger(), "[%s]: Changing odometry to GPS only", this->get_name());
+  } else if (request->odometry_type.type == 2) {
+    gps_use_    = false;
+    hector_use_ = true;
+    RCLCPP_WARN(this->get_logger(), "[%s]: Changing odometry to HECTOR only", this->get_name());
+  }
+
+  response->success = true;
+  response->message = "Done";
+
+  return true;
+}
+//}
+
 /* getPx4ParamIntCallback //{ */
 bool Odometry2::getPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::GetPx4ParamInt>::SharedFuture future) {
   std::shared_ptr<fog_msgs::srv::GetPx4ParamInt::Response> result = future.get();
@@ -1072,14 +1125,12 @@ void Odometry2::odometryRoutine(void) {
     publishLocalOdom();
 
 
-    if (hector_use_) {
-      if (hector_reliable_) {
-        updateEstimators();
-        publishOdometry();
-        checkHectorReliability();
-      } else {
-        resetHector();
-      }
+    if (hector_reliable_) {
+      updateEstimators();
+      publishOdometry();
+      checkHectorReliability();
+    } else {
+      resetHector();
     }
   }
 }
@@ -1295,9 +1346,9 @@ void Odometry2::pixhawkEkfUpdate() {
 
   auto request = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
 
-  //Having both hector and gps
-  if (gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
-      dt.count() > hector_fusion_wait_ && gps_use_ && hector_use_) {
+  // Having both hector and gps
+  if (gps_reliable_ && gps_use_ && hector_reliable_ && hector_use_ && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
+      dt.count() > hector_fusion_wait_) {
 
     set_ekf_bitmask_called_ = true;
     set_ekf_hgt_called_     = true;
@@ -1312,9 +1363,9 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
-  //Having only hector
-  } else if (!gps_reliable_ && hector_reliable_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
-             dt.count() > hector_fusion_wait_ && hector_use_) {
+    // Having only hector
+  } else if ((!gps_reliable_ || !gps_use_) && hector_reliable_ && hector_use_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 &&
+             !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ && dt.count() > hector_fusion_wait_) {
 
     set_ekf_bitmask_called_ = true;
     set_ekf_hgt_called_     = true;
@@ -1329,7 +1380,7 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
-  //Having only gps
+    // Having only gps
   } else if (gps_reliable_ && (!hector_use_ || !hector_reliable_) && current_ekf_bitmask_ != 1 && !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ &&
              gps_use_) {
 
@@ -1346,7 +1397,7 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
-  //No odometry
+    // No odometry
   } else if (!gps_reliable_ && !hector_reliable_ && (gps_use_ || hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
@@ -1650,8 +1701,7 @@ void Odometry2::checkHectorReliability() {
 
     {
       std::scoped_lock lock(mutex_hector_raw_);
-      if (std::pow(pos_hector_raw_[0] - pos_hector_raw_prev_[0], 2) == 0 &&
-          std::pow(pos_hector_raw_[1] - pos_hector_raw_prev_[1], 2) == 0) {
+      if (std::pow(pos_hector_raw_[0] - pos_hector_raw_prev_[0], 2) == 0 && std::pow(pos_hector_raw_[1] - pos_hector_raw_prev_[1], 2) == 0) {
         RCLCPP_WARN(this->get_logger(), "[Odometry2]: Hector does not have any features. orig_x: %f, orig_y: %f, x: %f, y: %f . Not reliable",
                     pos_hector_raw_prev_[0], pos_hector_raw_prev_[1], pos_hector_raw_[0], pos_hector_raw_[1]);
         hector_reliable_ = false;
@@ -1700,6 +1750,19 @@ std::string Odometry2::toUppercase(const std::string &str_in) {
 
 //}
 
+/* //{ isValidType */
+bool Odometry2::isValidType(const fog_msgs::msg::OdometryType &type) {
+
+  if (type.type == fog_msgs::msg::OdometryType::GPSHECTOR || type.type == fog_msgs::msg::OdometryType::GPS ||
+      type.type == fog_msgs::msg::OdometryType::HECTOR) {
+    return true;
+  }
+
+  return false;
+}
+
+//}
+
 /* parse_param //{ */
 template <class T>
 bool Odometry2::parse_param(std::string param_name, T &param_dest) {
@@ -1713,14 +1776,6 @@ bool Odometry2::parse_param(std::string param_name, T &param_dest) {
   }
   return true;
 }
-//}
-
-/* parse_param impl //{ */
-template bool Odometry2::parse_param<int>(std::string param_name, int &param_dest);
-template bool Odometry2::parse_param<double>(std::string param_name, double &param_dest);
-template bool Odometry2::parse_param<float>(std::string param_name, float &param_dest);
-template bool Odometry2::parse_param<std::string>(std::string param_name, std::string &param_dest);
-template bool Odometry2::parse_param<unsigned int>(std::string param_name, unsigned int &param_dest);
 //}
 
 }  // namespace odometry2
