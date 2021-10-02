@@ -53,6 +53,7 @@ def generate_launch_description():
                     # ("~/sensor_gps_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
                     ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
                     ("~/reset_hector_out", "/" + DRONE_DEVICE_ID + "/syscommand"),
+                    ("~/change_odometry_source", "/" + DRONE_DEVICE_ID + "/odometry2/change_odometry_source"),
 
                     ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
