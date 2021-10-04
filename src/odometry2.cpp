@@ -29,6 +29,7 @@
 #include <fog_msgs/srv/set_px4_param_float.hpp>
 #include <fog_msgs/srv/change_odometry.hpp>
 #include <fog_msgs/msg/odometry_type.hpp>
+#include <fog_msgs/msg/odometry_diagnostics.hpp>
 #include <nav_msgs/msg/path.hpp>
 
 #include <px4_msgs/msg/vehicle_command.hpp>
@@ -132,20 +133,23 @@ private:
   std::atomic_bool       set_initial_px4_params_ = false;
 
   // GPS
-  bool             gps_use_ = true;
-  float            pos_gps_[3];
-  float            ori_gps_[4];
-  int              c_gps_init_msgs_   = 0;
-  float            gps_eph_max_       = 0;
-  int              gps_msg_good_      = 0;
-  int              gps_msg_err_       = 0;
-  int              c_gps_eph_err_     = 0;
-  int              c_gps_eph_good_    = 0;
-  int              gps_num_init_msgs_ = 0;
-  std::atomic_bool gps_reliable_      = true;
+  std::atomic_bool   gps_use_ = true;
+  float              pos_gps_[3];
+  float              ori_gps_[4];
+  int                c_gps_init_msgs_   = 0;
+  float              gps_eph_max_       = 0;
+  int                gps_msg_good_      = 0;
+  int                gps_msg_err_       = 0;
+  int                c_gps_eph_err_     = 0;
+  int                c_gps_eph_good_    = 0;
+  int                gps_num_init_msgs_ = 0;
+  std::atomic_bool   gps_reliable_      = true;
+  std::vector<float> gps_init_values_lat_;
+  std::vector<float> gps_init_values_lon_;
+  int                gps_num_avg_msgs_ = 0;
 
   // HECTOR
-  bool             hector_use_ = false;
+  std::atomic_bool hector_use_ = false;
   float            pos_hector_[3];
   std::mutex       mutex_hector_raw_;
   float            pos_hector_raw_prev_[2];
@@ -243,6 +247,7 @@ private:
   rclcpp::Publisher<px4_msgs::msg::VehicleVisualOdometry>::SharedPtr visual_odom_publisher_;
   rclcpp::Publisher<px4_msgs::msg::SensorGps>::SharedPtr             gps_sensor_publisher_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr                reset_hector_publisher_;
+  rclcpp::Publisher<fog_msgs::msg::OdometryDiagnostics>::SharedPtr   diagnostics_publisher_;
 
   // subscribers
   rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr           timesync_subscriber_;
@@ -290,12 +295,12 @@ private:
   bool        isValidGate(const double value, const double min_value, const double max_value, const std::string &value_name);
   bool        isValidType(const fog_msgs::msg::OdometryType &type);
   bool        setInitialPx4Params();
-  std::string printOdometryDiag();
   std::string toUppercase(const std::string &type);
 
   void publishTF();
   void publishStaticTF();
   void publishLocalOdom();
+  void publishDiagnostics();
   void updateEstimators();
   void publishOdometry();
   void checkHectorReliability();
@@ -335,14 +340,17 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* parse general params from config file //{ */
 
-  bool callbacks_enabled_ = false;
+  bool callbacks_enabled_, temp = false;
   parse_param("odometry_loop_rate", odometry_loop_rate_);
-  /* parse_param("gps.use_gps", gps_use_); */
+  parse_param("gps.use_gps", temp);
+  gps_use_.store(temp);
   parse_param("gps.eph_max", gps_eph_max_);
   parse_param("gps.msg_good", gps_msg_good_);
   parse_param("gps.msg_err", gps_msg_err_);
   parse_param("gps.num_init_msgs", gps_num_init_msgs_);
-  parse_param("hector.use_hector", hector_use_);
+  parse_param("gps.avg_msgs", gps_num_avg_msgs_);
+  parse_param("hector.use_hector", temp);
+  hector_use_.store(temp);
   parse_param("hector.num_init_msgs", hector_num_init_msgs_);
   parse_param("hector.msg_interval_max", hector_msg_interval_max_);
   parse_param("hector.msg_interval_warn", hector_msg_interval_warn_);
@@ -534,6 +542,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   visual_odom_publisher_  = this->create_publisher<px4_msgs::msg::VehicleVisualOdometry>("~/visual_odom_out", 10);
   gps_sensor_publisher_   = this->create_publisher<px4_msgs::msg::SensorGps>("~/sensor_gps_out", 10);
   reset_hector_publisher_ = this->create_publisher<std_msgs::msg::String>("~/reset_hector_out", 10);
+  diagnostics_publisher_  = this->create_publisher<fog_msgs::msg::OdometryDiagnostics>("~/diagnostics_out", 10);
 
   // subscribers
   timesync_subscriber_ =
@@ -605,10 +614,18 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
     return;
   }
 
+  // Average GPS measurement for the home set
+  if (gps_init_values_lat_.size() < gps_num_avg_msgs_) {
+    gps_init_values_lat_.push_back(msg->lat);
+    gps_init_values_lon_.push_back(msg->lon);
+    return;
+  }
+
   /* Initialize the global frame position */
   if (!getting_gps_) {
-    ref.latitude_deg  = msg->lat * 1e-7;
-    ref.longitude_deg = msg->lon * 1e-7;
+
+    ref.latitude_deg = (std::reduce(gps_init_values_lat_.begin(), gps_init_values_lat_.end()) / gps_init_values_lat_.size()) * 1e-7;
+    ref.longitude_deg = (std::reduce(gps_init_values_lon_.begin(), gps_init_values_lon_.end()) / gps_init_values_lon_.size()) * 1e-7;
 
     RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS! Reliability check later", this->get_name());
     RCLCPP_WARN(this->get_logger(), "[%s] GPS origin - lat: %f ; lon: %f", this->get_name(), ref.latitude_deg, ref.longitude_deg);
@@ -1072,7 +1089,7 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
 
   // Skip number of messages before system initialization
   if (c_garmin_init_msgs_++ < garmin_num_init_msgs_) {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Garmin height #%d - z: %f", this->get_name(), c_garmin_init_msgs_, measurement);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100, "[%s]: Garmin height #%d - z: %f", this->get_name(), c_garmin_init_msgs_, measurement);
     return;
   }
 
@@ -1090,8 +1107,7 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
 
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
   /* if (!alt_mf_garmin_->isValid(measurement)) { */
-  /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(),
-   * measurement); */
+  /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(), measurement); */
   /*   return; */
   /* } */
 
@@ -1106,6 +1122,8 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
 void Odometry2::odometryRoutine(void) {
 
   if (is_initialized_ && getting_gps_) {
+    publishDiagnostics();
+
 
     if (!set_initial_px4_params_) {
       setInitialPx4Params();
@@ -1131,10 +1149,6 @@ void Odometry2::odometryRoutine(void) {
       checkHectorReliability();
     } else {
       resetHector();
-      if (!gps_use_) {
-        gps_use_ = true;
-        RCLCPP_WARN(this->get_logger(), "[%s]: Hector not reliable, fallback to gps", this->get_name());
-      }
     }
   }
 }
@@ -1279,6 +1293,11 @@ void Odometry2::publishLocalOdom() {
 geometry_msgs::msg::PoseStamped Odometry2::transformBetween(std::string frame_from, std::string frame_to) {
   geometry_msgs::msg::PoseStamped pose_out;
   try {
+    /* if (!tf_buffer_->canTransform(frame_to, frame_from, rclcpp::Time(0))) { */
+    /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Missing tf from %s frame to %s frame.", this->get_name(), frame_from.c_str(), */
+    /*                        frame_to.c_str()); */
+    /*   return pose_out; */
+    /* } */
     auto transform_stamped      = tf_buffer_->lookupTransform(frame_to, frame_from, rclcpp::Time(0));
     pose_out.pose.position.x    = transform_stamped.transform.translation.x;
     pose_out.pose.position.y    = transform_stamped.transform.translation.y;
@@ -1402,9 +1421,9 @@ void Odometry2::pixhawkEkfUpdate() {
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     // No odometry
-  } else if (!gps_reliable_ && !hector_reliable_ && (gps_use_ || hector_use_)) {
+  } else if ((!gps_reliable_ || !gps_use_) && (!hector_reliable_ || !hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-    RCLCPP_ERROR(this->get_logger(), "[%s]: No reliable odometry, landing", this->get_name());
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: No reliable odometry, landing", this->get_name());
     land_service_->async_send_request(request);
     gps_use_    = false;
     hector_use_ = false;
@@ -1734,14 +1753,22 @@ void Odometry2::checkHectorReliability() {
   }
 } /*//}*/
 
-/* //{ printOdometryDiag */
-std::string Odometry2::printOdometryDiag() {
+/* publishDiagnostics //{ */
+void Odometry2::publishDiagnostics() {
+  fog_msgs::msg::OdometryDiagnostics msg;
+  msg.header.stamp    = this->get_clock()->now();
+  msg.header.frame_id = world_frame_;
+  msg.gps_use         = gps_use_;
+  msg.hector_use      = hector_use_;
+  msg.gps_reliable    = gps_reliable_;
+  msg.hector_reliable = hector_reliable_;
+  msg.ekf2_aid_mask   = current_ekf_bitmask_;
+  msg.ekf2_hgt_mode   = current_hgt_mode_;
+  diagnostics_publisher_->publish(msg);
 
-  std::string s_diag;
-
-  return s_diag;
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                       "[%s]: GPS_USE: %d HECTOR_USE: %d GPS_RELIABLE: %d HECTOR_RELIABLE: %d EKF2_MASK: %d EKF2_HGT: %d", this->get_name(), msg.gps_use, msg.hector_use, msg.gps_reliable, msg.hector_reliable, msg.ekf2_aid_mask, msg.ekf2_hgt_mode);
 }
-
 //}
 
 /* toUppercase //{ */

@@ -24,19 +24,20 @@ odometry2:
 
 # gps # #{ 
   gps:
-    # use_gps: true
+    use_gps: true
     num_init_msgs: 5 # number of messages to skip before using gps
     eph_max: 2.0 # max deviation allowed to use gps source [m]
     msg_good: 5 # number of messages to confirm good gps
     msg_err: 5 # number of messages to confirm bad gps
+    avg_msgs: 20 # number of messages to average home set position
 # # #}
 
 # hector # #{
   hector:
     use_hector: true
     num_init_msgs: 10 # number of messages to skip before using hector messages
-    msg_interval_warn: 0.2 # interval between messages that gives warning [s]
-    msg_interval_max: 0.5 # max interval between messages before not reliable hector [s]
+    msg_interval_warn: 0.5 # interval between messages that gives warning [s]
+    msg_interval_max: 0.8 # max interval between messages before not reliable hector [s]
     max_velocity: 2.0 # max velocity of the hector estimator to believe hector [ms-1]
     max_position_jump: 1.0 # max position difference between consequent hector poses. 4 is default [m]
     reset_wait: 5.0 # wait for availability of next hector reset [s]
