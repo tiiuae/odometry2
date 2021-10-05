@@ -766,7 +766,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   // Wait to obtain pixhawk odom to attach hector tf accordingly
   if (!getting_pixhawk_odom_) {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Waiting for pixhawk odom to initialize tf", this->get_name());
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Waiting for pixhawk odom to initialize tf", this->get_name());
     return;
   }
 
@@ -1420,6 +1420,11 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
+    //Fallback from hector to usable gps if only on hector
+  } else if (!gps_use_ && gps_reliable_ && !hector_reliable_  ){
+    RCLCPP_WARN(this->get_logger(), "[%s]: Fallback to reliable gps", this->get_name(), request->value);
+    gps_use_ = true;
+
     // No odometry
   } else if ((!gps_reliable_ || !gps_use_) && (!hector_reliable_ || !hector_use_)) {
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
@@ -1766,7 +1771,7 @@ void Odometry2::publishDiagnostics() {
   msg.ekf2_hgt_mode   = current_hgt_mode_;
   diagnostics_publisher_->publish(msg);
 
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                        "[%s]: GPS_USE: %d HECTOR_USE: %d GPS_RELIABLE: %d HECTOR_RELIABLE: %d EKF2_MASK: %d EKF2_HGT: %d", this->get_name(), msg.gps_use, msg.hector_use, msg.gps_reliable, msg.hector_reliable, msg.ekf2_aid_mask, msg.ekf2_hgt_mode);
 }
 //}
