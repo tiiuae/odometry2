@@ -135,6 +135,7 @@ private:
   // GPS
   std::atomic_bool   gps_use_ = true;
   float              pos_gps_[3];
+  float              pos_gps_offset_[2];
   float              ori_gps_[4];
   int                c_gps_init_msgs_   = 0;
   float              gps_eph_max_       = 0;
@@ -149,6 +150,7 @@ private:
   int                gps_num_avg_msgs_ = 0;
 
   // HECTOR
+  float            current_visual_odometry_[2];
   std::atomic_bool hector_use_ = false;
   float            pos_hector_[3];
   std::mutex       mutex_hector_raw_;
@@ -373,6 +375,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   px4_params_int.push_back(px4_int("EKF2_RNG_AID", param_int));
   parse_param("px4.EKF2_HGT_MODE", hector_default_hgt_mode_);
   px4_params_int.push_back(px4_int("EKF2_HGT_MODE", hector_default_hgt_mode_));
+  parse_param("px4.SYS_HAS_BARO", param_int);
+  px4_params_int.push_back(px4_int("SYS_HAS_BARO", param_int));
 
   parse_param("px4.EKF2_EV_DELAY", param_float);
   px4_params_float.push_back(px4_float("EKF2_EV_DELAY", param_float));
@@ -401,6 +405,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   hector_origin_frame_ = uav_name_ + "/hector_origin";
   hector_frame_        = uav_name_ + "/hector_fcu";
 
+  pos_gps_offset_[0] = 0;
+  pos_gps_offset_[1] = 0;
   //}
 
   /* initialize altitude estimation //{*/
@@ -624,7 +630,7 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
   /* Initialize the global frame position */
   if (!getting_gps_) {
 
-    ref.latitude_deg = (std::reduce(gps_init_values_lat_.begin(), gps_init_values_lat_.end()) / gps_init_values_lat_.size()) * 1e-7;
+    ref.latitude_deg  = (std::reduce(gps_init_values_lat_.begin(), gps_init_values_lat_.end()) / gps_init_values_lat_.size()) * 1e-7;
     ref.longitude_deg = (std::reduce(gps_init_values_lon_.begin(), gps_init_values_lon_.end()) / gps_init_values_lon_.size()) * 1e-7;
 
     RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS! Reliability check later", this->get_name());
@@ -1107,7 +1113,8 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
 
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
   /* if (!alt_mf_garmin_->isValid(measurement)) { */
-  /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(), measurement); */
+  /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(),
+   * measurement); */
   /*   return; */
   /* } */
 
@@ -1294,7 +1301,8 @@ geometry_msgs::msg::PoseStamped Odometry2::transformBetween(std::string frame_fr
   geometry_msgs::msg::PoseStamped pose_out;
   try {
     /* if (!tf_buffer_->canTransform(frame_to, frame_from, rclcpp::Time(0))) { */
-    /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Missing tf from %s frame to %s frame.", this->get_name(), frame_from.c_str(), */
+    /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Missing tf from %s frame to %s frame.", this->get_name(), frame_from.c_str(),
+     */
     /*                        frame_to.c_str()); */
     /*   return pose_out; */
     /* } */
@@ -1390,6 +1398,12 @@ void Odometry2::pixhawkEkfUpdate() {
   } else if ((!gps_reliable_ || !gps_use_) && hector_reliable_ && hector_use_ && current_ekf_bitmask_ != hector_default_ekf_mask_ - 1 &&
              !set_ekf_bitmask_called_ && !set_ekf_hgt_called_ && dt.count() > hector_fusion_wait_) {
 
+    pos_gps_offset_[0] = current_visual_odometry_[0] - pos_gps_[0];
+    pos_gps_offset_[1] = current_visual_odometry_[1] - pos_gps_[1];
+    RCLCPP_INFO(this->get_logger(), "[%s]: Hector : x: %f, y: %f", this->get_name(), current_visual_odometry_[0], current_visual_odometry_[1]);
+    RCLCPP_INFO(this->get_logger(), "[%s]: GPS: x: %f, y: %f", this->get_name(), pos_gps_[0], pos_gps_[1]);
+    RCLCPP_INFO(this->get_logger(), "[%s]: Hector offset wrt GPS: x: %f, y: %f", this->get_name(), pos_gps_offset_[0], pos_gps_offset_[1]);
+
     set_ekf_bitmask_called_ = true;
     set_ekf_hgt_called_     = true;
 
@@ -1420,8 +1434,8 @@ void Odometry2::pixhawkEkfUpdate() {
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
-    //Fallback from hector to usable gps if only on hector
-  } else if (!gps_use_ && gps_reliable_ && !hector_reliable_  ){
+    // Fallback from hector to usable gps if only on hector
+  } else if (!gps_use_ && gps_reliable_ && !hector_reliable_) {
     RCLCPP_WARN(this->get_logger(), "[%s]: Fallback to reliable gps", this->get_name(), request->value);
     gps_use_ = true;
 
@@ -1598,8 +1612,11 @@ void Odometry2::publishOdometry() {
     visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000;
     visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
 
-    visual_odometry_.x = tf.pose.position.x;
-    visual_odometry_.y = tf.pose.position.y;
+    visual_odometry_.x = tf.pose.position.x - pos_gps_offset_[0];
+    visual_odometry_.y = tf.pose.position.y - pos_gps_offset_[1];
+
+    current_visual_odometry_[0] = tf.pose.position.x;
+    current_visual_odometry_[1] = tf.pose.position.y;
 
     // Apply of Garmin message delay
     garmin_buffer_z_.insert(garmin_buffer_z_.begin(), tf.pose.position.z);
@@ -1772,7 +1789,8 @@ void Odometry2::publishDiagnostics() {
   diagnostics_publisher_->publish(msg);
 
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                       "[%s]: GPS_USE: %d HECTOR_USE: %d GPS_RELIABLE: %d HECTOR_RELIABLE: %d EKF2_MASK: %d EKF2_HGT: %d", this->get_name(), msg.gps_use, msg.hector_use, msg.gps_reliable, msg.hector_reliable, msg.ekf2_aid_mask, msg.ekf2_hgt_mode);
+                       "[%s]: GPS_USE: %d HECTOR_USE: %d GPS_RELIABLE: %d HECTOR_RELIABLE: %d EKF2_MASK: %d EKF2_HGT: %d", this->get_name(), msg.gps_use,
+                       msg.hector_use, msg.gps_reliable, msg.hector_reliable, msg.ekf2_aid_mask, msg.ekf2_hgt_mode);
 }
 //}
 
