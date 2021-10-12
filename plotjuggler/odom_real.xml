@@ -1,0 +1,260 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root version="2.3.8">
+ <tabbed_widget name="Main Window" parent="main_window">
+  <Tab containers="1" tab_name="Position">
+   <Container>
+    <DockSplitter orientation="-" count="3" sizes="0.333684;0.332632;0.333684">
+     <DockArea name="Normal X">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897321" bottom="-2.667321" right="5.025741" top="0.064822"/>
+       <limitY/>
+       <curve color="#0500ff" name="/tii/VehicleLocalPosition_PubSubTopic/y"/>
+       <curve color="#1aff00" name="/tii/slam_out_pose/pose/position/x"/>
+       <curve color="#ff8500" name="/tii/VehicleVisualOdometry_PubSubTopic/y"/>
+      </plot>
+     </DockArea>
+     <DockArea name="Normal Y">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897321" bottom="-6.648479" right="5.025741" top="0.177101"/>
+       <limitY/>
+       <curve color="#0000ff" name="/tii/VehicleLocalPosition_PubSubTopic/x"/>
+       <curve color="#00ff06" name="/tii/slam_out_pose/pose/position/y"/>
+       <curve color="#ff6f00" name="/tii/VehicleVisualOdometry_PubSubTopic/x"/>
+      </plot>
+     </DockArea>
+     <DockArea name="Down Z">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.000000" bottom="-0.185697" right="5.025741" top="0.053585"/>
+       <limitY/>
+       <curve color="#0e00ff" name="/tii/VehicleLocalPosition_PubSubTopic/z"/>
+       <curve color="#ff6e00" name="/tii/VehicleVisualOdometry_PubSubTopic/z"/>
+       <curve color="#00ff38" name="/tii/DistanceSensor_PubSubTopic/current_distance">
+        <transform alias="/tii/DistanceSensor_PubSubTopic/current_distance[Scale/Offset]" name="Scale/Offset">
+         <options value_offset="0" value_scale="-1.0" time_offset="0"/>
+        </transform>
+       </curve>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Speed">
+   <Container>
+    <DockSplitter orientation="-" count="3" sizes="0.350526;0.349474;0.3">
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897321" bottom="-0.047035" right="7.837221" top="0.014939"/>
+       <limitY/>
+       <curve color="#1900ff" name="/tii/VehicleLocalPosition_PubSubTopic/vx"/>
+       <curve color="#1dff00" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/x"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897321" bottom="-0.017860" right="7.837221" top="0.034742"/>
+       <limitY/>
+       <curve color="#0e3dff" name="/tii/VehicleLocalPosition_PubSubTopic/vy"/>
+       <curve color="#00ff1a" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/y"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897321" bottom="-0.229039" right="7.837221" top="0.225966"/>
+       <limitY/>
+       <curve color="#1400ef" name="/tii/VehicleLocalPosition_PubSubTopic/vz"/>
+       <curve color="#00ff2b" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/z"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Orientation">
+   <Container>
+    <DockSplitter orientation="-" count="4" sizes="0.25079;0.249737;0.248683;0.25079">
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897502" bottom="0.987557" right="18.477250" top="0.987670"/>
+       <limitY/>
+       <curve color="#0d00e8" name="/tii/VehicleOdometry_PubSubTopic/q.0"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897502" bottom="-0.000410" right="18.477250" top="0.000109"/>
+       <limitY/>
+       <curve color="#0009ff" name="/tii/VehicleOdometry_PubSubTopic/q.1"/>
+       <curve color="#14ff00" name="/tii/VehicleVisualOdometry_PubSubTopic/q.1"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897502" bottom="0.004717" right="18.477250" top="0.005540"/>
+       <limitY/>
+       <curve color="#0015ff" name="/tii/VehicleOdometry_PubSubTopic/q.2"/>
+       <curve color="#1ac938" name="/tii/VehicleVisualOdometry_PubSubTopic/q.2"/>
+      </plot>
+     </DockArea>
+     <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.897502" bottom="-0.157174" right="18.477250" top="-0.156460"/>
+        <limitY/>
+        <curve color="#0004ff" name="/tii/VehicleOdometry_PubSubTopic/q.3"/>
+        <curve color="#0eff13" name="/tii/VehicleVisualOdometry_PubSubTopic/q.3"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.897321" bottom="-0.315672" right="18.476940" top="-0.314225"/>
+        <limitY/>
+        <curve color="#1600ff" name="/tii/VehicleLocalPosition_PubSubTopic/heading"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Timestamps">
+   <Container>
+    <DockSplitter orientation="-" count="2" sizes="0.500526;0.499474">
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897502" bottom="1972135798.000000" right="12.041202" top="1983877948.000000"/>
+       <limitY/>
+       <curve color="#1f77b4" name="/tii/VehicleOdometry_PubSubTopic/timestamp"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot style="Lines" mode="TimeSeries">
+       <range left="0.897502" bottom="2013440393.050000" right="12.041202" top="2025181490.950000"/>
+       <limitY/>
+       <curve color="#d62728" name="/tii/VehicleOdometry_PubSubTopic/timestamp_sample"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="GPS GLobal Position">
+   <Container>
+    <DockSplitter orientation="-" count="3" sizes="0.334737;0.330526;0.334737">
+     <DockSplitter orientation="|" count="3" sizes="0.338226;0.337615;0.324159">
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.859091" bottom="50.112474" right="11.407121" top="50.112478"/>
+        <limitY/>
+        <curve color="#1f77b4" name="/tii/VehicleGlobalPosition_PubSubTopic/lat"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="501124724.225000" right="11.329323" top="501124756.775000"/>
+        <limitY/>
+        <curve color="#f14cc1" name="/tii/VehicleGpsPosition_PubSubTopic/lat"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="-0.113050" right="11.329323" top="0.141050"/>
+        <limitY/>
+        <curve color="#1f77b4" name="/tii/VehicleGpsPosition_PubSubTopic/vel_n_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter orientation="|" count="3" sizes="0.337615;0.338226;0.324159">
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.859091" bottom="14.417558" right="11.407121" top="14.417562"/>
+        <limitY/>
+        <curve color="#d62728" name="/tii/VehicleGlobalPosition_PubSubTopic/lon"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="144175542.900000" right="11.329323" top="144175631.100000"/>
+        <limitY/>
+        <curve color="#9467bd" name="/tii/VehicleGpsPosition_PubSubTopic/lon"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="-0.138975" right="11.329323" top="0.153975"/>
+        <limitY/>
+        <curve color="#d62728" name="/tii/VehicleGpsPosition_PubSubTopic/vel_e_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter orientation="|" count="3" sizes="0.337615;0.338226;0.324159">
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.859091" bottom="191.730009" right="11.407121" top="191.780093"/>
+        <limitY/>
+        <curve color="#1ac938" name="/tii/VehicleGlobalPosition_PubSubTopic/alt"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="192014.475000" right="11.329323" top="192624.525000"/>
+        <limitY/>
+        <curve color="#ff7f0e" name="/tii/VehicleGpsPosition_PubSubTopic/alt"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot style="Lines" mode="TimeSeries">
+        <range left="0.965266" bottom="-0.036875" right="11.329323" top="0.083875"/>
+        <limitY/>
+        <curve color="#1ac938" name="/tii/VehicleGpsPosition_PubSubTopic/vel_d_m_s"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <currentTabIndex index="2"/>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="1"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <!-- - - - - - - - - - - - - - - -->
+ <Plugins>
+  <plugin ID="DataLoad CSV">
+   <default time_axis=""/>
+  </plugin>
+  <plugin ID="DataLoad ROS2 bags">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+  </plugin>
+  <plugin ID="DataLoad ULog"/>
+  <plugin ID="ROS2 Topic Subscriber">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="false"/>
+   <max_array_size value="true"/>
+   <selected_topics>
+    <topic name="/tii/DistanceSensor_PubSubTopic"/>
+    <topic name="/tii/SensorGps_PubSubTopic"/>
+    <topic name="/tii/VehicleGlobalPosition_PubSubTopic"/>
+    <topic name="/tii/VehicleGpsPosition_PubSubTopic"/>
+    <topic name="/tii/VehicleLocalPosition_PubSubTopic"/>
+    <topic name="/tii/VehicleOdometry_PubSubTopic"/>
+    <topic name="/tii/VehicleVisualOdometry_PubSubTopic"/>
+    <topic name="/tii/garmin/range"/>
+    <topic name="/tii/odometry2/local_hector"/>
+    <topic name="/tii/odometry2/local_odom"/>
+    <topic name="/tii/odometry2/pixhawk_hector"/>
+    <topic name="/tii/slam_out_pose"/>
+   </selected_topics>
+  </plugin>
+  <plugin ID="UDP Server"/>
+  <plugin ID="WebSocket Server"/>
+  <plugin ID="ZMQ Subscriber"/>
+  <plugin ID="CSV Exporter" status="idle"/>
+  <plugin ID="ROS2 Topic Re-Publisher" status="idle"/>
+ </Plugins>
+ <!-- - - - - - - - - - - - - - - -->
+ <previouslyLoaded_Datafiles/>
+ <previouslyLoaded_Streamer name="ROS2 Topic Subscriber"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <customMathEquations/>
+ <snippets/>
+ <!-- - - - - - - - - - - - - - - -->
+</root>
+
