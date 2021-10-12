@@ -33,7 +33,7 @@ def generate_launch_description():
                 namespace=namespace,
                 name='odometry2',
                 parameters=[
-                    pkg_share_path + '/config/odometry2.yaml',
+                    pkg_share_path + '/config/odometry2_real.yaml',
                     {"use_sim_time": launch.substitutions.LaunchConfiguration("use_sim_time")},
                 ],
                 remappings=[
