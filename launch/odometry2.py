@@ -48,13 +48,11 @@ def generate_launch_description():
                     ("~/baro_in", "/" + DRONE_DEVICE_ID + "/SensorBaro_PubSubTopic"),
                     ("~/garmin_in", "/" + DRONE_DEVICE_ID + "/DistanceSensor_PubSubTopic"),
 
-                    ("~/set_origin_out", "/" + DRONE_DEVICE_ID + "/control_interface/set_origin"),
                     # ("~/sensor_gps_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
                     ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
                     ("~/reset_hector_out", "/" + DRONE_DEVICE_ID + "/syscommand"),
                     ("~/change_odometry_source", "/" + DRONE_DEVICE_ID + "/odometry2/change_odometry_source"),
 
-                    ("~/get_origin", "~/get_origin"),
                     ("~/getting_odom", "~/getting_odom"),
 
                     ("~/get_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/get_px4_param_int"),

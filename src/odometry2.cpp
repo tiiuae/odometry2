@@ -20,7 +20,6 @@
 
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
-#include <fog_msgs/srv/get_origin.hpp>
 #include <fog_msgs/srv/get_bool.hpp>
 #include <fog_msgs/srv/vec4.hpp>
 #include <fog_msgs/srv/get_px4_param_int.hpp>
@@ -113,9 +112,6 @@ private:
   std::string fcu_frame_           = "";
   std::string hector_origin_frame_ = "";
   std::string hector_frame_        = "";
-
-  // use takeoff lat and long to initialize local frame
-  mavsdk::geometry::CoordinateTransformation::GlobalCoordinate ref;
 
   unsigned int px4_system_id_;
   unsigned int px4_component_id_ = 1;
@@ -269,13 +265,11 @@ private:
 
   // services provided
   rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr        getting_odom_service_;
-  rclcpp::Service<fog_msgs::srv::GetOrigin>::SharedPtr      get_origin_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr        reset_hector_service_;
   rclcpp::Service<fog_msgs::srv::ChangeOdometry>::SharedPtr change_odometry_source_;
 
   // service callbacks
   bool getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Request> request, std::shared_ptr<fog_msgs::srv::GetBool::Response> response);
-  bool getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request, std::shared_ptr<fog_msgs::srv::GetOrigin::Response> response);
   bool resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   bool changeOdometryCallback(const std::shared_ptr<fog_msgs::srv::ChangeOdometry::Request> request,
                               std::shared_ptr<fog_msgs::srv::ChangeOdometry::Response>      response);
@@ -328,8 +322,6 @@ private:
 Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   RCLCPP_INFO(this->get_logger(), "[%s]: Initializing...", this->get_name());
-  ref.latitude_deg = 0.0;
-  ref.latitude_deg = 0.0;
 
   // Getting
   try {
@@ -566,7 +558,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   // service handlers
   getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/getting_odom", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
-  get_origin_service_   = this->create_service<fog_msgs::srv::GetOrigin>("~/get_origin", std::bind(&Odometry2::getOriginCallback, this, _1, _2));
   reset_hector_service_ = this->create_service<std_srvs::srv::Trigger>("~/reset_hector_service_in", std::bind(&Odometry2::resetHectorCallback, this, _1, _2));
   change_odometry_source_ =
       this->create_service<fog_msgs::srv::ChangeOdometry>("~/change_odometry_source", std::bind(&Odometry2::changeOdometryCallback, this, _1, _2));
@@ -612,29 +603,13 @@ void Odometry2::gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr m
   if (!is_initialized_) {
     return;
   }
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s] Getting GPS! Reliability check later", this->get_name());
 
   // wait for gps convergence after bootup
   if (c_gps_init_msgs_++ < gps_num_init_msgs_) {
     RCLCPP_INFO(this->get_logger(), "[%s]: GPS pose #%d - lat: %f lon: %f", this->get_name(), c_gps_init_msgs_, msg->lat, msg->lon);
     c_gps_init_msgs_++;
     return;
-  }
-
-  // Average GPS measurement for the home set
-  if (gps_init_values_lat_.size() < gps_num_avg_msgs_) {
-    gps_init_values_lat_.push_back(msg->lat);
-    gps_init_values_lon_.push_back(msg->lon);
-    return;
-  }
-
-  /* Initialize the global frame position */
-  if (!getting_gps_) {
-
-    ref.latitude_deg  = (std::reduce(gps_init_values_lat_.begin(), gps_init_values_lat_.end()) / gps_init_values_lat_.size()) * 1e-7;
-    ref.longitude_deg = (std::reduce(gps_init_values_lon_.begin(), gps_init_values_lon_.end()) / gps_init_values_lon_.size()) * 1e-7;
-
-    RCLCPP_INFO(this->get_logger(), "[%s] Getting GPS! Reliability check later", this->get_name());
-    RCLCPP_WARN(this->get_logger(), "[%s] GPS origin - lat: %f ; lon: %f", this->get_name(), ref.latitude_deg, ref.longitude_deg);
   }
 
   // GPS quality is getting lower
@@ -842,26 +817,6 @@ bool Odometry2::getOdomCallback(const std::shared_ptr<fog_msgs::srv::GetBool::Re
   } else {
     response->value = false;
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Waiting for Odometry availability!", this->get_name());
-    return false;
-  }
-  return true;
-}
-//}
-
-/* getOriginCallback //{ */
-bool Odometry2::getOriginCallback(const std::shared_ptr<fog_msgs::srv::GetOrigin::Request> request,
-                                  std::shared_ptr<fog_msgs::srv::GetOrigin::Response>      response) {
-  if (!is_initialized_) {
-    return false;
-  }
-  if (ref.latitude_deg != 0.0 && ref.longitude_deg != 0.0) {
-    response->latitude  = ref.latitude_deg;
-    response->longitude = ref.longitude_deg;
-    response->success   = true;
-    RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin service responded!", this->get_name());
-  } else {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: GPS origin not set yet!", this->get_name());
-    response->success = false;
     return false;
   }
   return true;
