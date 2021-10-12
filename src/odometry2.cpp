@@ -873,21 +873,24 @@ bool Odometry2::resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger
                                     std::shared_ptr<std_srvs::srv::Trigger::Response>      response) {
   if (!is_initialized_) {
     response->message = "ROS not initialized";
-    return false;
+    response->success = false;
+    return true;
   }
 
   if (hector_reset_called_) {
     response->message = "Hector in reset mode";
+    response->success = false;
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "[Odometry2]: Hector is still resetting");
-    return false;
+    return true;
   }
 
   std::chrono::duration<double> dt = std::chrono::system_clock::now() - hector_reset_called_time_;
   if (dt.count() < hector_reset_wait_) {
     response->message = "Waiting for next hector reset availability";
+    response->success = false;
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, "[Odometry2]: Waiting for next hector reset availability. Call again in dt: %f",
                          hector_reset_wait_ - dt.count());
-    return false;
+    return true;
   }
 
   hector_reset_called_      = true;
@@ -902,10 +905,14 @@ bool Odometry2::resetHectorCallback(const std::shared_ptr<std_srvs::srv::Trigger
   }
   catch (...) {
     RCLCPP_ERROR(this->get_logger(), "[Odometry2]: Exception caught during publishing hector reset topic");
-    response->message = "Exception caught during publishing hector reset topic";
-    return false;
+    response->message = "exception caught during publishing hector reset topic";
+    response->success = false;
+    return true;
   }
   RCLCPP_INFO(this->get_logger(), "[Odometry2]: Hector map reset called");
+
+  response->message = "Hector reset successfull";
+  response->success = true;
 
   return true;
 }
