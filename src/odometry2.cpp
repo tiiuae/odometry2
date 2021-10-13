@@ -1041,7 +1041,6 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
     return;
   }
 
-  getting_garmin_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting garmin!", this->get_name());
 
   double measurement = msg->current_distance;
@@ -1084,13 +1083,14 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
   got_garmin_alt_correction_ = true;
 
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting Garmin altitude corrections", this->get_name());
+  getting_garmin_ = true;
 }
 //}
 
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
 
-  if (is_initialized_ && getting_gps_) {
+  if (is_initialized_ && getting_gps_ && getting_garmin_) {
     publishDiagnostics();
 
 
@@ -1119,6 +1119,9 @@ void Odometry2::odometryRoutine(void) {
     } else {
       resetHector();
     }
+  } else {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Waiting for sensor initalization GPS_READY: %d GARMIN_READY: %d",
+                         this->get_name(), getting_gps_.load(), getting_garmin_.load());
   }
 }
 //}
