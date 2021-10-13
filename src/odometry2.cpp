@@ -284,7 +284,7 @@ private:
   rclcpp::Client<fog_msgs::srv::GetPx4ParamInt>::SharedPtr   get_px4_param_int_;
   rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedPtr   set_px4_param_int_;
   rclcpp::Client<fog_msgs::srv::SetPx4ParamFloat>::SharedPtr set_px4_param_float_;
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr          land_service_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr          land_service_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr          reset_hector_client_;
 
   // internal functions
@@ -566,7 +566,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   get_px4_param_int_   = this->create_client<fog_msgs::srv::GetPx4ParamInt>("~/get_px4_param_int");
   set_px4_param_int_   = this->create_client<fog_msgs::srv::SetPx4ParamInt>("~/set_px4_param_int");
   set_px4_param_float_ = this->create_client<fog_msgs::srv::SetPx4ParamFloat>("~/set_px4_param_float");
-  land_service_        = this->create_client<std_srvs::srv::SetBool>("~/land_out");
+  land_service_        = this->create_client<std_srvs::srv::Trigger>("~/land_out");
   reset_hector_client_ = this->create_client<std_srvs::srv::Trigger>("~/reset_hector_service_out");
 
   callback_group_ = this->create_callback_group(rclcpp::callback_group::CallbackGroupType::MutuallyExclusive);
@@ -1403,7 +1403,7 @@ void Odometry2::pixhawkEkfUpdate() {
 
     // No odometry
   } else if ((!gps_reliable_ || !gps_use_) && (!hector_reliable_ || !hector_use_)) {
-    auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
     RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: No reliable odometry, landing", this->get_name());
     land_service_->async_send_request(request);
     gps_use_    = false;
