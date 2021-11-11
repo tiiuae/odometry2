@@ -55,6 +55,7 @@
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/range.hpp>
 
@@ -155,20 +156,20 @@ private:
   float            ori_hector_[4];
   float            pos_orig_hector_[3];
   float            ori_orig_hector_[4];
-  int              c_hector_init_msgs_         = 0;
-  int              hector_num_init_msgs_       = 0;
-  int              hector_default_ekf_mask_    = 0;
-  int              hector_default_hgt_mode_    = 0;
-  float            hector_msg_interval_max_    = 0.0;
-  float            hector_msg_interval_warn_   = 0.0;
-  double           hector_hdg_previous_        = 0.0;
-  float            hector_reset_wait_          = 0.0;
-  float            hector_fusion_wait_         = 0.0;
-  float            hector_max_position_jump_   = 0.0;
-  float            hector_max_velocity_        = 0.0;
-  std::atomic_bool hector_reliable_            = true;
-  std::atomic_bool hector_tf_setup_            = false;
-  std::atomic_bool hector_reset_called_        = false;
+  int              c_hector_init_msgs_       = 0;
+  int              hector_num_init_msgs_     = 0;
+  int              hector_default_ekf_mask_  = 0;
+  int              hector_default_hgt_mode_  = 0;
+  float            hector_msg_interval_max_  = 0.0;
+  float            hector_msg_interval_warn_ = 0.0;
+  double           hector_hdg_previous_      = 0.0;
+  float            hector_reset_wait_        = 0.0;
+  float            hector_fusion_wait_       = 0.0;
+  float            hector_max_position_jump_ = 0.0;
+  float            hector_max_velocity_      = 0.0;
+  std::atomic_bool hector_reliable_          = true;
+  std::atomic_bool hector_tf_setup_          = false;
+  std::atomic_bool hector_reset_called_      = false;
   /* float            hector_reset_timeout_limit_ = 0.0; */
   /* int              hector_num_of_reset_atmp    = 0; */
   /* float            hector_fail_reset_wait_     = 0.0; */
@@ -177,11 +178,14 @@ private:
   std::chrono::time_point<std::chrono::system_clock> time_hector_last_msg_;
   std::chrono::time_point<std::chrono::system_clock> hector_reset_called_time_ = std::chrono::system_clock::now();
 
+
+  geometry_msgs::msg::PoseStamped output_msg, tf_msg;
+  std::atomic_bool                published_hector = false;
+
   // VISION SENSOR
-  px4_msgs::msg::VehicleVisualOdometry               visual_odometry_;
-  std::atomic<unsigned long long>                    timestamp_;
-  std::atomic<std::int64_t>                          timestamp_raw_;
-  std::chrono::time_point<std::chrono::system_clock> time_sync_time_;
+  std::atomic<unsigned long long>                             timestamp_;
+  std::atomic<std::int64_t>                                   timestamp_raw_;
+  std::chrono::time_point<std::chrono::high_resolution_clock> time_sync_time_;
 
   // GARMIN
   int                garmin_num_init_msgs_       = 0;
@@ -260,6 +264,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr     garmin_subscriber_;
 
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ground_truth_subscriber_;
+
   // subscriber callbacks
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
   void gpsCallback(const px4_msgs::msg::VehicleGpsPosition::UniquePtr msg);
@@ -267,6 +273,7 @@ private:
   void hectorPoseCallback(const geometry_msgs::msg::PoseStamped::UniquePtr msg);
   void baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg);
   void garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr msg);
+  void groundTruthCallback(const nav_msgs::msg::Odometry::UniquePtr msg);
 
   // services provided
   rclcpp::Service<fog_msgs::srv::GetBool>::SharedPtr        getting_odom_service_;
@@ -311,11 +318,11 @@ private:
   geometry_msgs::msg::PoseStamped transformBetween(std::string frame_from, std::string frame_to);
 
   // timers
-  rclcpp::CallbackGroup::SharedPtr                   callback_group_;
-  rclcpp::TimerBase::SharedPtr                       odometry_timer_;
-  void                                               odometryRoutine(void);
-  std::chrono::time_point<std::chrono::system_clock> time_odometry_timer_prev_;
-  std::atomic_bool                                   time_odometry_timer_set_ = false;
+  rclcpp::CallbackGroup::SharedPtr                            callback_group_, callback_group_hector_;
+  rclcpp::TimerBase::SharedPtr                                odometry_timer_;
+  void                                                        odometryRoutine(void);
+  std::chrono::time_point<std::chrono::high_resolution_clock> time_odometry_timer_prev_;
+  std::atomic_bool                                            time_odometry_timer_set_ = false;
 
   // utils
   template <class T>
@@ -372,8 +379,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   px4_params_int.push_back(px4_int("EKF2_RNG_AID", param_int));
   parse_param("px4.EKF2_HGT_MODE", hector_default_hgt_mode_);
   px4_params_int.push_back(px4_int("EKF2_HGT_MODE", hector_default_hgt_mode_));
-  parse_param("px4.SYS_HAS_BARO", param_int);
-  px4_params_int.push_back(px4_int("SYS_HAS_BARO", param_int));
 
   parse_param("px4.EKF2_EV_DELAY", param_float);
   px4_params_float.push_back(px4_float("EKF2_EV_DELAY", param_float));
@@ -389,6 +394,12 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   px4_params_float.push_back(px4_float("MC_YAWRATE_MAX", param_float));
   parse_param("px4.MPC_ACC_HOR", param_float);
   px4_params_float.push_back(px4_float("MPC_ACC_HOR", param_float));
+  parse_param("px4.MPC_ACC_HOR_MAX", param_float);
+  px4_params_float.push_back(px4_float("MPC_ACC_HOR_MAX", param_float));
+  parse_param("px4.MPC_JERK_AUTO", param_float);
+  px4_params_float.push_back(px4_float("MPC_JERK_AUTO", param_float));
+  parse_param("px4.MPC_JERK_MAX", param_float);
+  px4_params_float.push_back(px4_float("MPC_JERK_MAX", param_float));
   parse_param("px4.MPC_ACC_DOWN_MAX", param_float);
   px4_params_float.push_back(px4_float("MPC_ACC_DOWN_MAX", param_float));
   parse_param("px4.MPC_ACC_UP_MAX", param_float);
@@ -551,9 +562,13 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   gps_sensor_publisher_  = this->create_publisher<px4_msgs::msg::SensorGps>("~/sensor_gps_out", 10);
   diagnostics_publisher_ = this->create_publisher<fog_msgs::msg::OdometryDiagnostics>("~/diagnostics_out", 10);
 
+  callback_group_hector_ = this->create_callback_group(rclcpp::callback_group::CallbackGroupType::Reentrant);
+  auto sub_opt           = rclcpp::SubscriptionOptions();
+  sub_opt.callback_group = callback_group_hector_;
+
   // subscribers
-  timesync_subscriber_ =
-      this->create_subscription<px4_msgs::msg::Timesync>("~/timesync_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::timesyncCallback, this, _1));
+  timesync_subscriber_ = this->create_subscription<px4_msgs::msg::Timesync>("~/timesync_in", rclcpp::SystemDefaultsQoS(),
+                                                                            std::bind(&Odometry2::timesyncCallback, this, _1), sub_opt);
   gps_subscriber_ =
       this->create_subscription<px4_msgs::msg::VehicleGpsPosition>("~/gps_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::gpsCallback, this, _1));
   pixhawk_odom_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
@@ -564,6 +579,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
       this->create_subscription<px4_msgs::msg::DistanceSensor>("~/garmin_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::garminCallback, this, _1));
   baro_subscriber_ =
       this->create_subscription<px4_msgs::msg::SensorBaro>("~/baro_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::baroCallback, this, _1));
+
+  ground_truth_subscriber_ =
+      this->create_subscription<nav_msgs::msg::Odometry>("~/groundtruth_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::groundTruthCallback, this, _1));
 
   // service handlers
   getting_odom_service_ = this->create_service<fog_msgs::srv::GetBool>("~/getting_odom", std::bind(&Odometry2::getOdomCallback, this, _1, _2));
@@ -602,9 +620,9 @@ void Odometry2::timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg) {
     return;
   }
   if (msg->sys_id == 1) {
-    timestamp_.store(msg->timestamp);
+    timestamp_.store(msg->ts1);
     timestamp_raw_.store(msg->tc1);
-    time_sync_time_ = std::chrono::system_clock::now();
+    time_sync_time_ = std::chrono::high_resolution_clock::now();
   }
 }
 //}
@@ -703,7 +721,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   if (!hector_reliable_ && !hector_reset_called_) {
     auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
     /* auto call_result = reset_hector_client_->async_send_request(request, std::bind(&Odometry2::resetHectorClientCallback, this, std::placeholders::_1)); */
-    auto call_result           = reset_hector_client_->async_send_request(request);
+    auto call_result = reset_hector_client_->async_send_request(request);
     /* hector_reset_attempt_time_ = std::chrono::system_clock::now(); */
     return;
   }
@@ -782,15 +800,15 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   catch (...) {
     RCLCPP_WARN(this->get_logger(), "[%s]: failed to getHeading() from hector orientation, dropping this correction", this->get_name());
   }
+  /*//}*/
 
   {
-    std::scoped_lock lock(mutex_hector_raw_);
+    std::scoped_lock lock(mutex_hector_lat_estimator_);
     hector_lat_correction_[0] = msg->pose.position.x;
     hector_lat_correction_[1] = msg->pose.position.y;
   }
   got_hector_lat_correction_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector lateral corrections", this->get_name());
-  /*//}*/
 
   getting_hector_ = true;
 }
@@ -1114,17 +1132,64 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
 }
 //}
 
+/* groundTruthCallback //{ */
+void Odometry2::groundTruthCallback(const nav_msgs::msg::Odometry::UniquePtr msg) {
+  if (!is_initialized_) {
+    return;
+  }
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting ground truth", this->get_name());
+
+  std::chrono::duration<long int, std::nano> diff = std::chrono::high_resolution_clock::now() - time_sync_time_;
+
+  px4_msgs::msg::VehicleVisualOdometry visual_odometry;
+
+  visual_odometry.timestamp        = timestamp_ / 1000 + diff.count() / 1000;
+  visual_odometry.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
+
+  visual_odometry.x = msg->pose.pose.position.y - pos_gps_offset_[1];
+  visual_odometry.y = msg->pose.pose.position.x - pos_gps_offset_[0];
+  visual_odometry.z = -msg->pose.pose.position.z;
+
+ // | -------------- This changes global variable -------------- | 
+  /* current_visual_odometry_[0] = msg->pose.pose.position.y; */
+  /* current_visual_odometry_[1] = msg->pose.pose.position.x; */
+
+  visual_odometry.q[0] = mavros_orientation_.getW();
+  visual_odometry.q[1] = mavros_orientation_.getX();
+  visual_odometry.q[2] = mavros_orientation_.getY();
+  visual_odometry.q[3] = mavros_orientation_.getZ();
+
+  std::fill(visual_odometry.q_offset.begin(), visual_odometry.q_offset.end(), NAN);
+  std::fill(visual_odometry.pose_covariance.begin(), visual_odometry.pose_covariance.end(), NAN);
+
+  visual_odometry.vx = msg->twist.twist.linear.y;
+  visual_odometry.vy = msg->twist.twist.linear.x;
+  visual_odometry.vz = -msg->twist.twist.linear.z;
+
+  visual_odometry.rollspeed  = NAN;
+  visual_odometry.pitchspeed = NAN;
+  visual_odometry.yawspeed   = NAN;
+
+  std::fill(visual_odometry.velocity_covariance.begin(), visual_odometry.velocity_covariance.end(), NAN);
+
+  /* visual_odom_publisher_->publish(visual_odometry); */
+}
+//}
+
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
 
   if (is_initialized_ && getting_gps_ && getting_garmin_) {
-    publishDiagnostics();
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> time_now = std::chrono::high_resolution_clock::now();
+
+    publishDiagnostics();
 
     if (!set_initial_px4_params_) {
       setInitialPx4Params();
       set_initial_px4_params_ = true;
     }
+
     callbacks_enabled_ = true;
     odom_ready_        = true;
     if (static_tf_broadcaster_ == nullptr) {
@@ -1142,6 +1207,9 @@ void Odometry2::odometryRoutine(void) {
       checkHectorReliability();
       publishHectorOdometry();
     }
+
+    std::chrono::duration<double, std::milli> dt = (std::chrono::high_resolution_clock::now() - time_now) / 1000;
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Dt: %f milliseconds", dt.count() * 1000);
 
     // Check if hector is not waiting a long time for reset
     /* if (hector_reset_called_) { */
@@ -1302,12 +1370,6 @@ void Odometry2::publishLocalOdom() {
 geometry_msgs::msg::PoseStamped Odometry2::transformBetween(std::string frame_from, std::string frame_to) {
   geometry_msgs::msg::PoseStamped pose_out;
   try {
-    /* if (!tf_buffer_->canTransform(frame_to, frame_from, rclcpp::Time(0))) { */
-    /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Missing tf from %s frame to %s frame.", this->get_name(), frame_from.c_str(),
-     */
-    /*                        frame_to.c_str()); */
-    /*   return pose_out; */
-    /* } */
     auto transform_stamped      = tf_buffer_->lookupTransform(frame_to, frame_from, rclcpp::Time(0));
     pose_out.pose.position.x    = transform_stamped.transform.translation.x;
     pose_out.pose.position.y    = transform_stamped.transform.translation.y;
@@ -1392,7 +1454,7 @@ void Odometry2::pixhawkEkfUpdate() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = hector_default_hgt_mode_;
+    request->value      = 0;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
@@ -1457,18 +1519,22 @@ void Odometry2::pixhawkEkfUpdate() {
 void Odometry2::updateEstimators() {
 
   if (!time_odometry_timer_set_) {
-    time_odometry_timer_prev_ = std::chrono::system_clock::now();
+    time_odometry_timer_prev_ = std::chrono::high_resolution_clock::now();
     time_odometry_timer_set_  = true;
   }
 
   // calculate time since last estimators update
-  std::chrono::time_point       time_now = std::chrono::system_clock::now();
-  std::chrono::duration<double> dt       = time_now - time_odometry_timer_prev_;
+  std::chrono::time_point<std::chrono::high_resolution_clock> time_now = std::chrono::high_resolution_clock::now();
+  /* auto dt = std::chrono::duration_cast<std::chrono::seconds>(time_now - time_odometry_timer_prev_); */
+  std::chrono::duration<double, std::milli> dt = (time_now - time_odometry_timer_prev_) / 1000;
+
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Update estimator Dt: %f seconds", dt.count());
 
   if (dt.count() <= 0) {
     RCLCPP_WARN(this->get_logger(), "[%s]: odometry timer dt=%f, skipping estimator update.", this->get_name(), dt.count());
     return;
   }
+
 
   time_odometry_timer_prev_ = time_now;
 
@@ -1507,6 +1573,7 @@ void Odometry2::updateEstimators() {
   {
     std::scoped_lock lock(mutex_hector_lat_estimator_);
     if (got_hector_lat_correction_) {
+
       hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR);
     }
 
@@ -1519,6 +1586,7 @@ void Odometry2::updateEstimators() {
 
 /*publishHectorOdometry//{*/
 void Odometry2::publishHectorOdometry() {
+
 
   nav_msgs::msg::Odometry msg;
   msg.header.stamp    = this->get_clock()->now();
@@ -1585,14 +1653,17 @@ void Odometry2::publishHectorOdometry() {
   {
     std::scoped_lock lock(mutex_hector_lat_estimator_);
     hector_lat_estimator_->getState(0, pos_x);
+    /* std::cout << "get state: " << pos_x << std::endl; */
     hector_lat_estimator_->getState(1, pos_y);
     hector_lat_estimator_->getState(2, vel_x);
     hector_lat_estimator_->getState(3, vel_y);
     hector_lat_estimator_->getState(4, acc_x);
     hector_lat_estimator_->getState(5, acc_y);
   }
+  // Set variable for hector_frame tf creation
   pos_hector_[0] = pos_x;
   pos_hector_[1] = pos_y;
+
 
   // altitude
   double vel_z;
@@ -1600,117 +1671,114 @@ void Odometry2::publishHectorOdometry() {
   garmin_alt_estimator_->getState(0, pos_z);
   garmin_alt_estimator_->getState(1, vel_z);
 
+  // Set variable for hector_frame tf creation
   pos_hector_[2] = pos_z - std::abs(garmin_offset_);
 
+  // Allow to publish tf for hector_frame
   publishing_odometry_ = true;
+
 
   // publish odometry//{
 
-  // Transform pose and orientation
-  try {
-    auto tf = transformBetween(hector_frame_, ned_origin_frame_);
-
-    std::chrono::duration<long int, std::nano> diff = std::chrono::system_clock::now() - time_sync_time_;
-
-    visual_odometry_.timestamp        = timestamp_ + diff.count() / 1000;
-    visual_odometry_.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
-
-    visual_odometry_.x = tf.pose.position.x - pos_gps_offset_[0];
-    visual_odometry_.y = tf.pose.position.y - pos_gps_offset_[1];
-
-    current_visual_odometry_[0] = tf.pose.position.x;
-    current_visual_odometry_[1] = tf.pose.position.y;
-
-    // Apply of Garmin message delay
-    garmin_buffer_z_.insert(garmin_buffer_z_.begin(), tf.pose.position.z);
-    if (garmin_buffer_z_.size() > garmin_buffer_size_) {
-      visual_odometry_.z = garmin_buffer_z_.back();
-      garmin_buffer_z_.pop_back();
-    } else {
-      visual_odometry_.z = 0.0;
-    }
-
-
-    // TODO:: Using hector orientation is not reliable. Using magnetometer orientation
-    /* tf2::Quaternion q_orig, q_new, q_rot; */
-
-    /* tf2::convert(tf.pose.orientation, q_orig); */
-    /* double r = M_PI, p = 0, y = M_PI; */
-    /* q_rot.setRPY(r, p, y); */
-    /* q_new = q_rot * q_orig;  // Calculate the new orientation */
-    /* q_new.normalize(); */
-
-    /* visual_odometry_.q[0] = q_new.w(); */
-    /* visual_odometry_.q[1] = q_new.x(); */
-    /* visual_odometry_.q[2] = q_new.y(); */
-    /* visual_odometry_.q[3] = q_new.z(); */
-
-    /* visual_odometry_.q[0] = tf.pose.orientation.w; */
-    /* visual_odometry_.q[1] = tf.pose.orientation.x; */
-    /* visual_odometry_.q[2] = tf.pose.orientation.y; */
-    /* visual_odometry_.q[3] = tf.pose.orientation.z; */
-
-    visual_odometry_.q[0] = mavros_orientation_.getW();
-    visual_odometry_.q[1] = mavros_orientation_.getX();
-    visual_odometry_.q[2] = mavros_orientation_.getY();
-    visual_odometry_.q[3] = mavros_orientation_.getZ();
-
-    msg.pose.pose.position.x    = pos_hector_[0];
-    msg.pose.pose.position.y    = pos_hector_[1];
-    msg.pose.pose.position.z    = pos_hector_[2];
-    msg.pose.pose.orientation.w = ori_hector_[0];
-    msg.pose.pose.orientation.x = ori_hector_[1];
-    msg.pose.pose.orientation.y = ori_hector_[2];
-    msg.pose.pose.orientation.z = ori_hector_[3];
-  }
-  catch (...) {
-    std::fill(visual_odometry_.q_offset.begin(), visual_odometry_.q_offset.end(), NAN);
-    std::fill(visual_odometry_.pose_covariance.begin(), visual_odometry_.pose_covariance.end(), NAN);
-  }
-
-  // Transform velocity
-  try {
-    auto transform_stamped = tf_buffer_->lookupTransform(ned_origin_frame_, hector_origin_frame_, rclcpp::Time(0));
-
-    geometry_msgs::msg::Vector3Stamped hector_vel, global_vel;
-    hector_vel.header.frame_id = hector_frame_;
-    hector_vel.header.stamp    = rclcpp::Time(0);
-    hector_vel.vector.x        = vel_x;
-    hector_vel.vector.y        = vel_y;
-    hector_vel.vector.z        = vel_z;
-
-    tf2::doTransform(hector_vel, global_vel, transform_stamped);
-
-    visual_odometry_.vx = global_vel.vector.x;
-    visual_odometry_.vy = global_vel.vector.y;
-
-    // Apply of garmin message delay
-    garmin_buffer_vz_.insert(garmin_buffer_vz_.begin(), global_vel.vector.z);
-    if (garmin_buffer_vz_.size() > garmin_buffer_size_) {
-      visual_odometry_.vz = garmin_buffer_vz_.back();
-      garmin_buffer_vz_.pop_back();
-    } else {
-      visual_odometry_.vz = 0.0;
-    }
-
-    msg.twist.twist.linear.x = global_vel.vector.x;
-    msg.twist.twist.linear.y = global_vel.vector.y;
-    msg.twist.twist.linear.z = global_vel.vector.z;
-  }
-  catch (...) {
+  if (!tf_buffer_->canTransform(ned_origin_frame_, hector_origin_frame_, rclcpp::Time(0))) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Missing hector origin frame - waiting for hector initialization.",
+                         this->get_name());
     return;
   }
 
-  visual_odometry_.rollspeed  = NAN;
-  visual_odometry_.pitchspeed = NAN;
-  visual_odometry_.yawspeed   = NAN;
+  geometry_msgs::msg::PointStamped hector_pos, hector_pos_tf;
 
-  std::fill(visual_odometry_.velocity_covariance.begin(), visual_odometry_.velocity_covariance.end(), NAN);
+  auto transform_stamped = tf_buffer_->lookupTransform(ned_origin_frame_, hector_origin_frame_, rclcpp::Time(0));
+
+  // Transform pose and orientation
+
+  hector_pos.header.stamp    = this->get_clock()->now();
+  hector_pos.header.frame_id = "ssrc_fog_x/hector_origin";
+  hector_pos.point.x         = pos_hector_[0];
+  hector_pos.point.y         = pos_hector_[1];
+  hector_pos.point.z         = pos_hector_[2];
+
+  tf2::doTransform(hector_pos, hector_pos_tf, transform_stamped);
+
+  std::chrono::duration<long int, std::nano> diff = std::chrono::high_resolution_clock::now() - time_sync_time_;
+
+  px4_msgs::msg::VehicleVisualOdometry visual_odometry;
+
+  /* visual_odometry_.timestamp        = timestamp_ / 1000 + diff.count() / 1000 + 25000; */  // nic nezmeni
+  visual_odometry.timestamp        = timestamp_ / 1000 + diff.count() / 1000;
+  visual_odometry.timestamp_sample = timestamp_raw_ / 1000 + diff.count() / 1000;
+
+  visual_odometry.x = hector_pos_tf.point.x - pos_gps_offset_[0];
+  visual_odometry.y = hector_pos_tf.point.y - pos_gps_offset_[1];
+  visual_odometry.z = hector_pos_tf.point.z;
+
+  current_visual_odometry_[0] = hector_pos_tf.point.x;
+  current_visual_odometry_[1] = hector_pos_tf.point.y;
+
+  /* tf2::Quaternion q_orig, q_new, q_rot; */
+
+  /* tf2::convert(tf.pose.orientation, q_orig); */
+  /* double r = M_PI, p = 0, y = M_PI; */
+  /* q_rot.setRPY(r, p, y); */
+  /* q_new = q_rot * q_orig;  // Calculate the new orientation */
+  /* q_new.normalize(); */
+
+  /* visual_odometry_.q[0] = q_new.w(); */
+  /* visual_odometry_.q[1] = q_new.x(); */
+  /* visual_odometry_.q[2] = q_new.y(); */
+  /* visual_odometry_.q[3] = q_new.z(); */
+
+  /* visual_odometry_.q[0] = tf.pose.orientation.w; */
+  /* visual_odometry_.q[1] = tf.pose.orientation.x; */
+  /* visual_odometry_.q[2] = tf.pose.orientation.y; */
+  /* visual_odometry_.q[3] = tf.pose.orientation.z; */
+
+  visual_odometry.q[0] = mavros_orientation_.getW();
+  visual_odometry.q[1] = mavros_orientation_.getX();
+  visual_odometry.q[2] = mavros_orientation_.getY();
+  visual_odometry.q[3] = mavros_orientation_.getZ();
+
+  msg.pose.pose.position.x    = pos_hector_[0];
+  msg.pose.pose.position.y    = pos_hector_[1];
+  msg.pose.pose.position.z    = pos_hector_[2];
+  msg.pose.pose.orientation.w = ori_hector_[0];
+  msg.pose.pose.orientation.x = ori_hector_[1];
+  msg.pose.pose.orientation.y = ori_hector_[2];
+  msg.pose.pose.orientation.z = ori_hector_[3];
+
+  std::fill(visual_odometry.q_offset.begin(), visual_odometry.q_offset.end(), NAN);
+  std::fill(visual_odometry.pose_covariance.begin(), visual_odometry.pose_covariance.end(), NAN);
+
+  // Transform velocity
+  geometry_msgs::msg::Vector3Stamped hector_vel, hector_vel_tf;
+
+  hector_vel.header.stamp    = this->get_clock()->now();
+  hector_vel.header.frame_id = "ssrc_fog_x/hector_origin";
+  hector_vel.vector.x        = vel_x;
+  hector_vel.vector.y        = vel_y;
+  hector_vel.vector.z        = vel_z;
+
+  tf2::doTransform(hector_vel, hector_vel_tf, transform_stamped);
+
+  visual_odometry.vx = hector_vel_tf.vector.x;
+  visual_odometry.vy = hector_vel_tf.vector.y;
+  visual_odometry.vz = hector_vel_tf.vector.z;
+
+  msg.twist.twist.linear.x = hector_vel_tf.vector.x;
+  msg.twist.twist.linear.y = hector_vel_tf.vector.y;
+  msg.twist.twist.linear.z = hector_vel_tf.vector.z;
+
+  visual_odometry.rollspeed  = NAN;
+  visual_odometry.pitchspeed = NAN;
+  visual_odometry.yawspeed   = NAN;
+
+  std::fill(visual_odometry.velocity_covariance.begin(), visual_odometry.velocity_covariance.end(), NAN);
 
   pixhawk_hector_publisher_->publish(msg);
-  visual_odom_publisher_->publish(visual_odometry_);
+  visual_odom_publisher_->publish(visual_odometry);
 
   /*//}*/
+
 
 } /*//}*/
 

@@ -4,20 +4,22 @@ odometry2:
 # px4 # #{
   px4:
     EKF2_AID_MASK: 329 # default mask - will be changed according to hector and gps reliability
-    EKF2_EV_DELAY: 100.0 # hector measurements delay # 100~150
+    EKF2_EV_DELAY: 10.0 # hector measurements delay # 100~150
     EKF2_EV_NOISE_MD: 1 # use px4 covariances
     EKF2_EVP_NOISE: 0.05 # position measurement covariance [m]
     EKF2_EVV_NOISE: 0.05 # velocity measurement covariance [ms-1]
 
-    EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
+    EKF2_RNG_AID: 0 # Using the range sensor to estimate height if specific conditions are met
     EKF2_RNG_A_HMAX: 5.0 # Max height to use ranger for fusion in aid mode
 
-    EKF2_HGT_MODE: 0 # Default source of height estimation - will be changed according to hector and gps reliability 3 - vision height mode,  0 - barometer pressure
-    SYS_HAS_BARO: 1 # Force to use baro and use rng
+    EKF2_HGT_MODE: 3 # Default source of height estimation - will be changed according to hector and gps reliability 3 - vision height mode,  0 - barometer pressure
 
     MPC_XY_CRUISE: 1.0 # Max speed for mission mode [ms-1]
     MC_YAWRATE_MAX: 20.0 # Max yaw rate [degs-1]
-    MPC_ACC_HOR: 0.5 # 0.4 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_ACC_HOR: 0.5 # Acceleration for horizontal movement [ms-2] 3.0
+    MPC_ACC_HOR_MAX: 0.5 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_JERK_AUTO: 3.0 # Change of the acceleration [ms-3]
+    MPC_JERK_MAX: 3.0 # Max change of the acceleration [ms-3]
     MPC_ACC_DOWN_MAX: 1.0 #0.5 # Max acceleration for vertical move down [ms-2] 3.0
     MPC_ACC_UP_MAX: 1.0 #0.5 # Max acceleration for vertical move up [ms-2] 4.0
 
@@ -92,10 +94,10 @@ odometry2:
   lateral:
 
     measurement_covariance: # the covariance used when this measurement is used as correction in Kalman filter
-      hector: 0.01
+      hector: 0.001
 
     process_covariance: # the process covariance used in the prediction step of the Kalman filter
-      pos: 0.1 # 100.0
-      vel: 0.1 # 10000.0
-      acc: 10.0 # 10000.0
+      pos: 1.0 # 0.01 
+      vel: 10.0 # 0.1
+      acc: 100.0 # 1.0
 # # #}

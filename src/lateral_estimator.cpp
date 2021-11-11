@@ -149,20 +149,25 @@ bool LateralEstimator::doPrediction(const double x, const double y, double dt) {
   lat_u_t u;
   u << x, y;
 
-  lat_A_t newA = m_A;
-  newA(0, 2)  = dt;
-  newA(1, 3)  = dt;
-  newA(2, 4)  = dt;
-  newA(3, 5)  = dt;
-  newA(0, 4)  = std::pow(dt, 2);
-  newA(1, 5)  = std::pow(dt, 2);
+  /* lat_A_t newA = m_A; */
+  /* newA(0, 2)  = dt; */
+  /* newA(1, 3)  = dt; */
+  /* newA(2, 4)  = dt; */
+  /* newA(3, 5)  = dt; */
+  /* newA(0, 4)  = std::pow(dt, 2); */
+  /* newA(1, 5)  = std::pow(dt, 2); */
 
   {
     std::scoped_lock lock(mutex_lkf);
 
     try {
       // Apply the prediction step
+      //
+      /* std::cout << "before prediction: " << m_sc.x(0) << std::endl; */
+
       m_sc = mp_lkf->predict(m_sc, u, m_Q, dt);
+
+      /* std::cout << "after prediction: " << m_sc.x(0) << std::endl; */
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -227,7 +232,10 @@ bool LateralEstimator::doCorrection(const double x, const double y, int measurem
     std::scoped_lock lock(mutex_lkf);
 
     try {
+      /* std::cout << "before correction: " << m_sc.x(0) << std::endl; */
+      /* std::cout << "measurement: " << x << std::endl; */
       m_sc = mp_lkf->correct(m_sc, z, R);
+      /* std::cout << "after correction: " << m_sc.x(0) << std::endl; */
     }
     catch (const std::exception &e) {
       // In case of error, alert the user
@@ -261,6 +269,8 @@ bool LateralEstimator::getStates(lat_x_t &states) {
   std::scoped_lock lock(mutex_lkf);
 
   states = m_sc.x;
+
+  std::cout << m_sc.P << std::endl;
 
   return true;
 }

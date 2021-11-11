@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # add_definitions("-Wextra")
 # add_definitions("-Wpedantic")
 # add_definitions("-g")
-# add_definitions("-O3") # because normal release is just -O2
+add_definitions("-O3") # because normal release is just -O2
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)

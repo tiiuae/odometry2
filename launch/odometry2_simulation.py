@@ -47,6 +47,7 @@ def generate_launch_description():
                     ("~/hector_pose_in", "/" + DRONE_DEVICE_ID + "/hector_mapping/slam_out_pose"),
                     ("~/baro_in", "/" + DRONE_DEVICE_ID + "/SensorBaro_PubSubTopic"),
                     ("~/garmin_in", "/" + DRONE_DEVICE_ID + "/DistanceSensor_PubSubTopic"),
+                    # ("~/groundtruth_in", "/" + DRONE_DEVICE_ID + "/groundtruth"),
 
                     # ("~/sensor_gps_out", "/" + DRONE_DEVICE_ID + "/SensorGps_PubSubTopic"),
                     ("~/visual_odom_out", "/" + DRONE_DEVICE_ID + "/VehicleVisualOdometry_PubSubTopic"),
