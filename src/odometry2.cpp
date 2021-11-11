@@ -1188,7 +1188,7 @@ void Odometry2::odometryRoutine(void) {
     }
 
     std::chrono::duration<double, std::milli> dt = (std::chrono::high_resolution_clock::now() - time_now) / 1000;
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Dt: %f milliseconds", dt.count() * 1000);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Dt: %f milliseconds", dt.count() * 1000);
 
     // Check if hector is not waiting a long time for reset
     /* if (hector_reset_called_) { */
@@ -1507,7 +1507,7 @@ void Odometry2::updateEstimators() {
   /* auto dt = std::chrono::duration_cast<std::chrono::seconds>(time_now - time_odometry_timer_prev_); */
   std::chrono::duration<double, std::milli> dt = (time_now - time_odometry_timer_prev_) / 1000;
 
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Update estimator Dt: %f seconds", dt.count());
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Update estimator Dt: %f seconds", dt.count());
 
   if (dt.count() <= 0) {
     RCLCPP_WARN(this->get_logger(), "[%s]: odometry timer dt=%f, skipping estimator update.", this->get_name(), dt.count());
