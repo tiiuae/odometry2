@@ -114,11 +114,6 @@ private:
   std::string hector_origin_frame_ = "";
   std::string hector_frame_        = "";
 
-  unsigned int px4_system_id_;
-  unsigned int px4_component_id_ = 1;
-  std::string  target_ip_addr_;
-  unsigned int target_udp_port_;
-
   std::shared_ptr<tf2_ros::Buffer>                     tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener>          tf_listener_;
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
@@ -130,25 +125,22 @@ private:
   std::atomic_bool       set_initial_px4_params_ = false;
 
   // GPS
-  std::atomic_bool   gps_use_ = true;
-  float              pos_gps_[3];
-  float              pos_gps_offset_[2];
-  float              ori_gps_[4];
-  int                c_gps_init_msgs_   = 0;
-  float              gps_eph_max_       = 0;
-  int                gps_msg_good_      = 0;
-  int                gps_msg_err_       = 0;
-  int                c_gps_eph_err_     = 0;
-  int                c_gps_eph_good_    = 0;
-  int                gps_num_init_msgs_ = 0;
-  std::atomic_bool   gps_reliable_      = true;
-  std::vector<float> gps_init_values_lat_;
-  std::vector<float> gps_init_values_lon_;
-  int                gps_num_avg_msgs_ = 0;
+  std::atomic_bool gps_use_ = true;
+  float            pos_gps_[3];
+  float            pos_gps_offset_[2];
+  float            ori_gps_[4];
+  int              c_gps_init_msgs_   = 0;
+  float            gps_eph_max_       = 0;
+  int              gps_msg_good_      = 0;
+  int              gps_msg_err_       = 0;
+  int              c_gps_eph_err_     = 0;
+  int              c_gps_eph_good_    = 0;
+  int              gps_num_init_msgs_ = 0;
+  std::atomic_bool gps_reliable_      = true;
 
   // HECTOR
-  float            current_visual_odometry_[2];
   std::atomic_bool hector_use_ = false;
+  float            current_visual_odometry_[2];
   float            pos_hector_[3];
   std::mutex       mutex_hector_raw_;
   float            pos_hector_raw_prev_[2];
@@ -170,17 +162,10 @@ private:
   std::atomic_bool hector_reliable_          = true;
   std::atomic_bool hector_tf_setup_          = false;
   std::atomic_bool hector_reset_called_      = false;
-  /* float            hector_reset_timeout_limit_ = 0.0; */
-  /* int              hector_num_of_reset_atmp    = 0; */
-  /* float            hector_fail_reset_wait_     = 0.0; */
+  std::atomic_bool published_hector          = false;
 
-  /* std::chrono::time_point<std::chrono::system_clock> hector_reset_attempt_time_;  // time of calling hector reset */
   std::chrono::time_point<std::chrono::system_clock> time_hector_last_msg_;
   std::chrono::time_point<std::chrono::system_clock> hector_reset_called_time_ = std::chrono::system_clock::now();
-
-
-  geometry_msgs::msg::PoseStamped output_msg, tf_msg;
-  std::atomic_bool                published_hector = false;
 
   // VISION SENSOR
   std::atomic<unsigned long long>                             timestamp_;
@@ -195,32 +180,26 @@ private:
   std::vector<float> garmin_init_values_;
 
   // Vehicle local position
-  std::atomic<float> pos_local_[3];
-  std::atomic<float> ori_local_[4];
-  /* std::mutex mutex_local_; */
   tf2::Quaternion mavros_orientation_;
   std::mutex      mutex_mavros_orientation_;
 
   // Altitude estimation
   std::shared_ptr<AltitudeEstimator> garmin_alt_estimator_;
   std::vector<alt_R_t>               R_alt_vec_;
-
-  std::unique_ptr<MedianFilter> alt_mf_garmin_;
-  double                        _garmin_min_valid_alt_;
-  double                        _garmin_max_valid_alt_;
-  double                        _excessive_tilt_sq_;
-  std::atomic<double>           garmin_alt_correction_;
-  std::atomic_bool              got_garmin_alt_correction_ = false;
+  std::vector<float>                 garmin_buffer_z_;
+  std::vector<float>                 garmin_buffer_vz_;
+  std::atomic<double>                garmin_alt_correction_;
+  std::atomic_bool                   got_garmin_alt_correction_ = false;
+  std::unique_ptr<MedianFilter>      alt_mf_garmin_;
+  int                                garmin_buffer_size_;
+  double                             _garmin_min_valid_alt_;
+  double                             _garmin_max_valid_alt_;
+  double                             _excessive_tilt_sq_;
 
   std::atomic<double> baro_alt_correction_;
   std::atomic<double> baro_alt_measurement_prev_;
   std::atomic_bool    got_baro_alt_correction_ = false;
   rclcpp::Time        time_baro_prev_;
-
-  std::vector<float> garmin_buffer_z_;
-  std::vector<float> garmin_buffer_vz_;
-  int                garmin_buffer_size_;
-
 
   // Heading estimation
   std::mutex                        mutex_hector_hdg_estimator_;
@@ -263,7 +242,6 @@ private:
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr         baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr     garmin_subscriber_;
-
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ground_truth_subscriber_;
 
   // subscriber callbacks
@@ -346,7 +324,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* parse general params from config file //{ */
 
-  bool callbacks_enabled_, temp = false;
+  bool temp = false;
   parse_param("odometry_loop_rate", odometry_loop_rate_);
   parse_param("gps.use_gps", temp);
   gps_use_.store(temp);
@@ -354,7 +332,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   parse_param("gps.msg_good", gps_msg_good_);
   parse_param("gps.msg_err", gps_msg_err_);
   parse_param("gps.num_init_msgs", gps_num_init_msgs_);
-  parse_param("gps.avg_msgs", gps_num_avg_msgs_);
   parse_param("hector.use_hector", temp);
   hector_use_.store(temp);
   parse_param("hector.num_init_msgs", hector_num_init_msgs_);
@@ -431,8 +408,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // Garmin
   parse_param("altitude.median_filter.garmin.buffer_size", buffer_size);
   parse_param("altitude.median_filter.garmin.max_diff", max_diff);
-  /* alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff,
-   * rclcpp::NodeOptions(rclcpp::contexts::get_global_default_context)); */
+  alt_mf_garmin_ =
+      std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff, rclcpp::NodeOptions());
 
   //}
 
@@ -445,7 +422,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   /* excessive tilt //{ */
 
-  /* TODO: not used yet */
+  /* not used yet */
   double excessive_tilt_tmp;
   parse_param("altitude.excessive_tilt", excessive_tilt_tmp);
   _excessive_tilt_sq_ = std::pow(excessive_tilt_tmp, 2);
@@ -711,7 +688,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
 
   time_hector_last_msg_ = std::chrono::system_clock::now();
 
-  // Waiting for finish hector reset TODO:: Check if hector service has not been finished, call again or then make hector use false
+  // Waiting for finish hector reset. Check if hector service has not been finished, call again or then make hector use false
   if (hector_reset_called_) {
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Waiting for hector reset!", this->get_name());
     return;
@@ -768,7 +745,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   }
 
   /* Setup variables for tfs */ /*//{*/
-  if (!hector_tf_setup_ & publishing_static_tf_) {
+  if (!hector_tf_setup_ && publishing_static_tf_) {
     auto tf             = transformBetween(fcu_frame_, world_frame_);
     pos_orig_hector_[0] = tf.pose.position.x;
     pos_orig_hector_[1] = tf.pose.position.y;
@@ -1042,7 +1019,7 @@ void Odometry2::baroCallback(const px4_msgs::msg::SensorBaro::UniquePtr msg) {
   getting_baro_ = true;
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting baro!", this->get_name());
 
-  /* TODO: get AGL altitude from pressure, temperature and takeoff ASL altitude */
+  /* get AGL altitude from pressure, temperature and takeoff ASL altitude */
   /* double measurement = odometry_utils::getAltitudeFromPressure(msg->pressure, msg->temperature); */
   double measurement = 0.0;
   /* RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: getAltitudeFromPressure() not implemented. Using 0 for testing !!!", */
@@ -1118,11 +1095,10 @@ void Odometry2::garminCallback(const px4_msgs::msg::DistanceSensor::UniquePtr ms
   }
 
   // do not fuse garmin measurements when a height jump is detected - most likely the UAV is flying above an obstacle
-  /* if (!alt_mf_garmin_->isValid(measurement)) { */
-  /*   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(),
-   * measurement); */
-  /*   return; */
-  /* } */
+  if (!alt_mf_garmin_->isValid(measurement)) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: Garmin measurement %f declined by median filter.", this->get_name(), measurement);
+    return;
+  }
 
   garmin_alt_correction_     = measurement;
   got_garmin_alt_correction_ = true;
@@ -1150,14 +1126,17 @@ void Odometry2::groundTruthCallback(const nav_msgs::msg::Odometry::UniquePtr msg
   visual_odometry.y = msg->pose.pose.position.x - pos_gps_offset_[0];
   visual_odometry.z = -msg->pose.pose.position.z;
 
- // | -------------- This changes global variable -------------- | 
+  // | -------------- This changes global variable -------------- |
   /* current_visual_odometry_[0] = msg->pose.pose.position.y; */
   /* current_visual_odometry_[1] = msg->pose.pose.position.x; */
 
-  visual_odometry.q[0] = mavros_orientation_.getW();
-  visual_odometry.q[1] = mavros_orientation_.getX();
-  visual_odometry.q[2] = mavros_orientation_.getY();
-  visual_odometry.q[3] = mavros_orientation_.getZ();
+  {
+    std::scoped_lock lock(mutex_mavros_orientation_);
+    visual_odometry.q[0] = mavros_orientation_.getW();
+    visual_odometry.q[1] = mavros_orientation_.getX();
+    visual_odometry.q[2] = mavros_orientation_.getY();
+    visual_odometry.q[3] = mavros_orientation_.getZ();
+  }
 
   std::fill(visual_odometry.q_offset.begin(), visual_odometry.q_offset.end(), NAN);
   std::fill(visual_odometry.pose_covariance.begin(), visual_odometry.pose_covariance.end(), NAN);
@@ -1545,10 +1524,10 @@ void Odometry2::updateEstimators() {
   }
 
   if (got_baro_alt_correction_) {
-    /* garmin_alt_estimator_->doCorrection(baro_alt_correction_, ALT_BARO); TODO:: Missing baro estimator */
+    /* garmin_alt_estimator_->doCorrection(baro_alt_correction_, ALT_BARO); Missing baro estimator */
   }
 
-  /* TODO: add control input to prediction? */
+  /* add control input to prediction? */
   garmin_alt_estimator_->doPrediction(0.0, dt.count());
 
   //}
@@ -1564,7 +1543,7 @@ void Odometry2::updateEstimators() {
     /*   hector_hdg_estimator_->doCorrection(hector_hdg_correction_, HDG_GYRO); */
     /* } */
 
-    /* TODO: add control input to prediction? */
+    /* add control input to prediction? */
     hector_hdg_estimator_->doPrediction(0.0, dt.count());
   }
   //}
@@ -1577,7 +1556,7 @@ void Odometry2::updateEstimators() {
       hector_lat_estimator_->doCorrection(hector_lat_correction_[0], hector_lat_correction_[1], LAT_HECTOR);
     }
 
-    /* TODO: add control input to prediction? */
+    /* add control input to prediction? */
     hector_lat_estimator_->doPrediction(0.0, 0.0, dt.count());
   } /*//}*/
 }
@@ -1614,6 +1593,7 @@ void Odometry2::publishHectorOdometry() {
   }
   // Obtain mavros orientation
   try {
+    std::scoped_lock lock(mutex_mavros_orientation_);
     mavros_hdg = odometry_utils::getHeading(tf2::toMsg(mavros_orientation_));
   }
   catch (...) {
@@ -1631,21 +1611,22 @@ void Odometry2::publishHectorOdometry() {
   tf2_quaternion.setW(quaternion.w());
 
   // Transform the mavros orientation by the rotation matrix
-  quaternion = Eigen::Quaterniond(tf2::Transform(tf2::Matrix3x3(tf2_quaternion)) * mavros_orientation_);
-
-  /* geom_quaternion.x = quaternion.x(); */
-  /* geom_quaternion.y = quaternion.y(); */
-  /* geom_quaternion.z = quaternion.z(); */
-  /* geom_quaternion.w = quaternion.w(); */
-  /* ori_hector_[0] = quaternion.w(); */
-  /* ori_hector_[1] = quaternion.x(); */
-  /* ori_hector_[2] = quaternion.y(); */
-  /* ori_hector_[3] = quaternion.z(); */
-  // TODO: This orientation cannot be used, try to orient it corretly. Using mavros magnetometer orientation instead
-  ori_hector_[0] = mavros_orientation_.getW();
-  ori_hector_[1] = mavros_orientation_.getX();
-  ori_hector_[2] = mavros_orientation_.getY();
-  ori_hector_[3] = mavros_orientation_.getZ();
+  {
+    std::scoped_lock lock(mutex_mavros_orientation_);
+    quaternion = Eigen::Quaterniond(tf2::Transform(tf2::Matrix3x3(tf2_quaternion)) * mavros_orientation_);
+    /* geom_quaternion.x = quaternion.x(); */
+    /* geom_quaternion.y = quaternion.y(); */
+    /* geom_quaternion.z = quaternion.z(); */
+    /* geom_quaternion.w = quaternion.w(); */
+    /* ori_hector_[0] = quaternion.w(); */
+    /* ori_hector_[1] = quaternion.x(); */
+    /* ori_hector_[2] = quaternion.y(); */
+    /* ori_hector_[3] = quaternion.z(); */
+    ori_hector_[0] = mavros_orientation_.getW();
+    ori_hector_[1] = mavros_orientation_.getX();
+    ori_hector_[2] = mavros_orientation_.getY();
+    ori_hector_[3] = mavros_orientation_.getZ();
+  }
 
   // lateral
   double pos_x, pos_y, pos_z, vel_x, vel_y, acc_x, acc_y;
@@ -1733,10 +1714,13 @@ void Odometry2::publishHectorOdometry() {
   /* visual_odometry_.q[2] = tf.pose.orientation.y; */
   /* visual_odometry_.q[3] = tf.pose.orientation.z; */
 
-  visual_odometry.q[0] = mavros_orientation_.getW();
-  visual_odometry.q[1] = mavros_orientation_.getX();
-  visual_odometry.q[2] = mavros_orientation_.getY();
-  visual_odometry.q[3] = mavros_orientation_.getZ();
+  {
+    std::scoped_lock lock(mutex_mavros_orientation_);
+    visual_odometry.q[0] = mavros_orientation_.getW();
+    visual_odometry.q[1] = mavros_orientation_.getX();
+    visual_odometry.q[2] = mavros_orientation_.getY();
+    visual_odometry.q[3] = mavros_orientation_.getZ();
+  }
 
   msg.pose.pose.position.x    = pos_hector_[0];
   msg.pose.pose.position.y    = pos_hector_[1];
