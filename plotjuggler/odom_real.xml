@@ -9,7 +9,7 @@
        <range left="0.897321" bottom="-2.667321" right="5.025741" top="0.064822"/>
        <limitY/>
        <curve color="#0500ff" name="/tii/VehicleLocalPosition_PubSubTopic/y"/>
-       <curve color="#1aff00" name="/tii/slam_out_pose/pose/position/x"/>
+       <curve color="#1aff00" name="/tii/hector_mapping/slam_out_pose/pose/position/x"/>
        <curve color="#ff8500" name="/tii/VehicleVisualOdometry_PubSubTopic/y"/>
       </plot>
      </DockArea>
@@ -18,7 +18,7 @@
        <range left="0.897321" bottom="-6.648479" right="5.025741" top="0.177101"/>
        <limitY/>
        <curve color="#0000ff" name="/tii/VehicleLocalPosition_PubSubTopic/x"/>
-       <curve color="#00ff06" name="/tii/slam_out_pose/pose/position/y"/>
+       <curve color="#00ff06" name="/tii/hector_mapping/slam_out_pose/pose/position/y"/>
        <curve color="#ff6f00" name="/tii/VehicleVisualOdometry_PubSubTopic/x"/>
       </plot>
      </DockArea>
@@ -240,7 +240,7 @@
     <topic name="/tii/odometry2/local_hector"/>
     <topic name="/tii/odometry2/local_odom"/>
     <topic name="/tii/odometry2/pixhawk_hector"/>
-    <topic name="/tii/slam_out_pose"/>
+    <topic name="/tii/hector_mapping/slam_out_pose"/>
    </selected_topics>
   </plugin>
   <plugin ID="UDP Server"/>

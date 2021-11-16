@@ -41,9 +41,6 @@
 #include <px4_msgs/msg/sensor_gps.hpp>
 #include <px4_msgs/msg/distance_sensor.hpp>
 
-#include "geodesy/utm.h"
-#include "geodesy/wgs84.h"
-
 #include <mavsdk/geometry.h>
 
 #include <eigen3/Eigen/Core>
@@ -1433,7 +1430,7 @@ void Odometry2::pixhawkEkfUpdate() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = 0;
+    request->value      = hector_default_hgt_mode_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
@@ -1456,7 +1453,7 @@ void Odometry2::pixhawkEkfUpdate() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = hector_default_hgt_mode_;
+    request->value      = 3;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
@@ -1473,7 +1470,7 @@ void Odometry2::pixhawkEkfUpdate() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
     request->param_name = "EKF2_HGT_MODE";
-    request->value      = 0;
+    request->value      = hector_default_hgt_mode_;
     RCLCPP_INFO(this->get_logger(), "[%s]: Setting EKF2 hgt mode, value: %d", this->get_name(), request->value);
     call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
 
