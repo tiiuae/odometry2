@@ -1,5 +1,5 @@
 odometry2:
-  odometry_loop_rate: 100.0 # [Hz]
+  odometry_loop_rate: 50.0 # [Hz]
 
 # px4 # #{
   px4:

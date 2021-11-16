@@ -11,7 +11,7 @@
 
 #include <types.h>
 
-#define LAT_DT 0.01
+#define LAT_DT 0.02
 /* #define LAT_INPUT_COEFF 0.10 */
 #define LAT_INPUT_COEFF 0.0
 
