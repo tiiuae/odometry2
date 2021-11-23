@@ -36,7 +36,7 @@ odometry2:
 
 # hector # #{
   hector:
-    use_hector: true
+    use_hector: false
     num_init_msgs: 10 # number of messages to skip before using hector messages
     msg_interval_warn: 0.5 # interval between messages that gives warning [s]
     msg_interval_max: 0.8 # max interval between messages before not reliable hector [s]

@@ -239,7 +239,7 @@ private:
   rclcpp::Subscription<px4_msgs::msg::SensorBaro>::SharedPtr         baro_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   hector_pose_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::DistanceSensor>::SharedPtr     garmin_subscriber_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ground_truth_subscriber_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr           ground_truth_subscriber_;
 
   // subscriber callbacks
   void timesyncCallback(const px4_msgs::msg::Timesync::UniquePtr msg);
@@ -405,8 +405,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   // Garmin
   parse_param("altitude.median_filter.garmin.buffer_size", buffer_size);
   parse_param("altitude.median_filter.garmin.max_diff", max_diff);
-  alt_mf_garmin_ =
-      std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff, rclcpp::NodeOptions());
+  alt_mf_garmin_ = std::make_unique<MedianFilter>(buffer_size, max_valid, min_valid, max_diff, rclcpp::NodeOptions());
 
   //}
 
@@ -681,6 +680,10 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
     return;
   }
 
+  if (!hector_use_) {
+    return;
+  }
+
   RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting hector poses!", this->get_name());
 
   time_hector_last_msg_ = std::chrono::system_clock::now();
@@ -742,7 +745,7 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
   }
 
   /* Setup variables for tfs */ /*//{*/
-  if (!hector_tf_setup_ && publishing_static_tf_) {
+  if (hector_use_ && !hector_tf_setup_ && publishing_static_tf_) {
     auto tf             = transformBetween(fcu_frame_, world_frame_);
     pos_orig_hector_[0] = tf.pose.position.x;
     pos_orig_hector_[1] = tf.pose.position.y;
@@ -755,7 +758,8 @@ void Odometry2::hectorPoseCallback(const geometry_msgs::msg::PoseStamped::Unique
                 pos_orig_hector_[0], pos_orig_hector_[1], pos_orig_hector_[2], ori_orig_hector_[0], ori_orig_hector_[1], ori_orig_hector_[2],
                 ori_orig_hector_[3]);
     hector_tf_setup_ = true;
-  } /*//}*/
+  }
+  /*//}*/
 
   /* get heading from hector orientation quaternion //{*/
 
@@ -1178,7 +1182,7 @@ void Odometry2::odometryRoutine(void) {
     publishTF();
     publishLocalOdom();
 
-    if (hector_reliable_) {
+    if (hector_use_ && hector_reliable_) {
       updateEstimators();
       checkHectorReliability();
       publishHectorOdometry();
@@ -1210,33 +1214,34 @@ void Odometry2::odometryRoutine(void) {
 /* publishStaticTF //{ */
 void Odometry2::publishStaticTF() {
 
-  geometry_msgs::msg::TransformStamped tf_stamped;
+  geometry_msgs::msg::TransformStamped tfs1, tfs2;
   tf2::Quaternion                      q;
 
-  /* q.setRPY(-M_PI, 0, 0); */
-  /* tf_stamped.header.frame_id         = "local_odom"; */
-  /* tf_stamped.child_frame_id          = "fcu"; */
-  /* tf_stamped.transform.translation.x = 0.0; */
-  /* tf_stamped.transform.translation.y = 0.0; */
-  /* tf_stamped.transform.translation.z = 0.0; */
-  /* tf_stamped.transform.rotation.x    = q.getX(); */
-  /* tf_stamped.transform.rotation.y    = q.getY(); */
-  /* tf_stamped.transform.rotation.z    = q.getZ(); */
-  /* tf_stamped.transform.rotation.w    = q.getW(); */
-  /* static_tf_broadcaster_->sendTransform(tf_stamped); */
+  tfs1.header.stamp            = this->get_clock()->now();
+  tfs1.header.frame_id         = ned_fcu_frame_;
+  tfs1.child_frame_id          = fcu_frame_;
+  tfs1.transform.translation.x = 0;
+  tfs1.transform.translation.y = 0;
+  tfs1.transform.translation.z = 0;
+  q.setRPY(-M_PI, 0, 0);
+  tfs1.transform.rotation.w = q.getW();
+  tfs1.transform.rotation.x = q.getX();
+  tfs1.transform.rotation.y = q.getY();
+  tfs1.transform.rotation.z = q.getZ();
+  static_tf_broadcaster_->sendTransform(tfs1);
 
   q.setRPY(M_PI, 0, M_PI / 2);
-  q                                  = q.inverse();
-  tf_stamped.header.frame_id         = world_frame_;
-  tf_stamped.child_frame_id          = ned_origin_frame_;
-  tf_stamped.transform.translation.x = 0.0;
-  tf_stamped.transform.translation.y = 0.0;
-  tf_stamped.transform.translation.z = 0.0;
-  tf_stamped.transform.rotation.x    = q.getX();
-  tf_stamped.transform.rotation.y    = q.getY();
-  tf_stamped.transform.rotation.z    = q.getZ();
-  tf_stamped.transform.rotation.w    = q.getW();
-  static_tf_broadcaster_->sendTransform(tf_stamped);
+  q                            = q.inverse();
+  tfs2.header.frame_id         = world_frame_;
+  tfs2.child_frame_id          = ned_origin_frame_;
+  tfs2.transform.translation.x = 0.0;
+  tfs2.transform.translation.y = 0.0;
+  tfs2.transform.translation.z = 0.0;
+  tfs2.transform.rotation.x    = q.getX();
+  tfs2.transform.rotation.y    = q.getY();
+  tfs2.transform.rotation.z    = q.getZ();
+  tfs2.transform.rotation.w    = q.getW();
+  static_tf_broadcaster_->sendTransform(tfs2);
 
   publishing_static_tf_ = true;
 }
@@ -1260,19 +1265,6 @@ void Odometry2::publishTF() {
   tf1.transform.rotation.x    = ori_gps_[1];
   tf1.transform.rotation.y    = ori_gps_[2];
   tf1.transform.rotation.z    = ori_gps_[3];
-  tf_broadcaster_->sendTransform(tf1);
-
-  tf1.header.stamp            = this->get_clock()->now();
-  tf1.header.frame_id         = ned_fcu_frame_;
-  tf1.child_frame_id          = fcu_frame_;
-  tf1.transform.translation.x = 0;
-  tf1.transform.translation.y = 0;
-  tf1.transform.translation.z = 0;
-  q.setRPY(-M_PI, 0, 0);
-  tf1.transform.rotation.w = q.getW();
-  tf1.transform.rotation.x = q.getX();
-  tf1.transform.rotation.y = q.getY();
-  tf1.transform.rotation.z = q.getZ();
   tf_broadcaster_->sendTransform(tf1);
 
   if (hector_tf_setup_) {
@@ -1327,18 +1319,20 @@ void Odometry2::publishLocalOdom() {
   local_odom_publisher_->publish(msg);
 
   // Publish hector in the correct RVIZ orientation visualization
-  msg.header.stamp            = this->get_clock()->now();
-  msg.header.frame_id         = world_frame_;
-  msg.child_frame_id          = hector_frame_;
-  auto tf2                    = transformBetween(hector_frame_, world_frame_);
-  msg.pose.pose.position.x    = tf2.pose.position.x;
-  msg.pose.pose.position.y    = tf2.pose.position.y;
-  msg.pose.pose.position.z    = tf2.pose.position.z;
-  msg.pose.pose.orientation.w = tf.pose.orientation.w;
-  msg.pose.pose.orientation.x = tf.pose.orientation.x;
-  msg.pose.pose.orientation.y = tf.pose.orientation.y;
-  msg.pose.pose.orientation.z = tf.pose.orientation.z;
-  local_hector_publisher_->publish(msg);
+  if (hector_use_) {
+    msg.header.stamp            = this->get_clock()->now();
+    msg.header.frame_id         = world_frame_;
+    msg.child_frame_id          = hector_frame_;
+    auto tf2                    = transformBetween(hector_frame_, world_frame_);
+    msg.pose.pose.position.x    = tf2.pose.position.x;
+    msg.pose.pose.position.y    = tf2.pose.position.y;
+    msg.pose.pose.position.z    = tf2.pose.position.z;
+    msg.pose.pose.orientation.w = tf.pose.orientation.w;
+    msg.pose.pose.orientation.x = tf.pose.orientation.x;
+    msg.pose.pose.orientation.y = tf.pose.orientation.y;
+    msg.pose.pose.orientation.z = tf.pose.orientation.z;
+    local_hector_publisher_->publish(msg);
+  }
 }
 //}
 
