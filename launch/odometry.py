@@ -16,14 +16,16 @@ def generate_launch_description():
     ld.add_action(launch.actions.DeclareLaunchArgument("use_sim_time", default_value="false"))
     ld.add_action(launch.actions.DeclareLaunchArgument("debug", default_value="false"))
 
-    dbg_sub = launch.substitutions.PythonExpression(['"" if "false" == "', launch.substitutions.LaunchConfiguration("debug"), '" else "debug_ros2launch ' + os.ttyname(sys.stdout.fileno()) + '"'])
+    dbg_sub = None
+    if sys.stdout.isatty():
+        dbg_sub = launch.substitutions.PythonExpression(['"" if "false" == "', launch.substitutions.LaunchConfiguration("debug"), '" else "debug_ros2launch ' + os.ttyname(sys.stdout.fileno()) + '"'])
 
     DRONE_DEVICE_ID=os.getenv('DRONE_DEVICE_ID')
 
     namespace=DRONE_DEVICE_ID
     ld.add_action(ComposableNodeContainer(
         namespace='',
-        name=namespace+'_odometry2',
+        name=namespace+'_odometry',
         package='rclcpp_components',
         executable='component_container_mt',
         composable_node_descriptions=[
@@ -31,7 +33,7 @@ def generate_launch_description():
                 package=pkg_name,
                 plugin='odometry2::Odometry2',
                 namespace=namespace,
-                name='odometry2',
+                name='odometry',
                 parameters=[
                     # pkg_share_path + '/config/odometry2_real.yaml',
                     pkg_share_path + '/config/odometry2_simulation.yaml',
