@@ -12,9 +12,10 @@ def generate_launch_description():
 
     pkg_name = "odometry2"
     pkg_share_path = get_package_share_directory(pkg_name)
-    
+ 
     ld.add_action(launch.actions.DeclareLaunchArgument("use_sim_time", default_value="false"))
     ld.add_action(launch.actions.DeclareLaunchArgument("debug", default_value="false"))
+    ld.add_action(launch.actions.DeclareLaunchArgument("world_frame", default_value="world"))
 
     dbg_sub = None
     if sys.stdout.isatty():
@@ -35,15 +36,16 @@ def generate_launch_description():
                 namespace=namespace,
                 name='odometry',
                 parameters=[
-                    pkg_share_path + '/config/odometry2.yaml',
+                    pkg_share_path + '/config/param.yaml',
                     {"use_sim_time": launch.substitutions.LaunchConfiguration("use_sim_time")},
+                    {"world_frame": launch.substitutions.LaunchConfiguration("world_frame")},
                 ],
                 remappings=[
+                    # publishers
                     ("~/local_odom_out", "~/local_odom"),
-
+                    # subscribers
                     ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
-
-                    ("~/get_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/get_px4_param_int"),
+                    # service_clients
                     ("~/set_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_int"),
                     ("~/set_px4_param_float", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_float"),
                 ],
