@@ -4,8 +4,8 @@
 
   <name>odometry2</name>
   <version>0.0.1</version>
-  <description>Odomertry fusion for ros2</description>
-  <maintainer email="jan.bednar14@fel.cvut.cz">jan.bednar14</maintainer>
+  <description>Odomertry for ros2</description>
+  <maintainer email="bednar@fly4future.com">Jan Bednar</maintainer>
   <license>GPLv3</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -1,0 +1,22 @@
+odometry2:
+  odometry_loop_rate: 50.0 # [Hz]
+
+# px4 # #{
+  px4:
+    EKF2_AID_MASK: 1 # default mask - use only gps
+
+    EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
+    EKF2_RNG_A_HMAX: 5.0 # Max height to use ranger for fusion in aid mode
+
+    EKF2_HGT_MODE: 2 # Default source of height estimation  - will be changed according to sensor reliability 3 - vision height mode,  0 - barometer pressure
+
+    MPC_XY_CRUISE: 1.0 # Max speed for mission mode [ms-1]
+    MC_YAWRATE_MAX: 20.0 # Max yaw rate [degs-1]
+    MPC_ACC_HOR: 0.5 # 0.4 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_ACC_HOR_MAX: 0.5 # Max acceleration for horizontal movement [ms-2] 3.0
+    MPC_JERK_AUTO: 3.0 # Change of the acceleration [ms-3]
+    MPC_JERK_MAX: 3.0 # Max change of the acceleration [ms-3]
+    MPC_ACC_DOWN_MAX: 1.0 #0.5 # Max acceleration for vertical move down [ms-2] 3.0
+    MPC_ACC_UP_MAX: 1.0 #0.5 # Max acceleration for vertical move up [ms-2] 4.0
+
+# # #}

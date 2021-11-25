@@ -23,14 +23,12 @@ find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(MAVSDK REQUIRED)
 
 find_package(Eigen3 REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
 include_directories(
-  include
   ${rclcpp_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
 )
@@ -41,10 +39,6 @@ include_directories(
 
 add_library(odometry2 SHARED
   src/odometry2.cpp
-  src/altitude_estimator.cpp
-  src/heading_estimator.cpp
-  src/lateral_estimator.cpp
-  src/lib/median_filter.cpp
   )
 
 target_compile_definitions(odometry2
@@ -63,14 +57,6 @@ ament_target_dependencies(odometry2
   tf2
   tf2_ros
   tf2_geometry_msgs
-  MAVSDK
-  )
-
-target_link_libraries(odometry2
-  MAVSDK::mavsdk_action
-  MAVSDK::mavsdk_mission
-  MAVSDK::mavsdk_telemetry
-  MAVSDK::mavsdk
   )
 
 rclcpp_components_register_nodes(odometry2 PLUGIN "${PROJECT_NAME}::Odometry2" EXECUTABLE odometry2)
