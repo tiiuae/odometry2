@@ -9,8 +9,6 @@
        <range left="0.897321" bottom="-2.667321" right="5.025741" top="0.064822"/>
        <limitY/>
        <curve color="#0500ff" name="/tii/VehicleLocalPosition_PubSubTopic/y"/>
-       <curve color="#1aff00" name="/tii/hector_mapping/slam_out_pose/pose/position/x"/>
-       <curve color="#ff8500" name="/tii/VehicleVisualOdometry_PubSubTopic/y"/>
       </plot>
      </DockArea>
      <DockArea name="Normal Y">
@@ -18,8 +16,6 @@
        <range left="0.897321" bottom="-6.648479" right="5.025741" top="0.177101"/>
        <limitY/>
        <curve color="#0000ff" name="/tii/VehicleLocalPosition_PubSubTopic/x"/>
-       <curve color="#00ff06" name="/tii/hector_mapping/slam_out_pose/pose/position/y"/>
-       <curve color="#ff6f00" name="/tii/VehicleVisualOdometry_PubSubTopic/x"/>
       </plot>
      </DockArea>
      <DockArea name="Down Z">
@@ -27,7 +23,6 @@
        <range left="0.000000" bottom="-0.185697" right="5.025741" top="0.053585"/>
        <limitY/>
        <curve color="#0e00ff" name="/tii/VehicleLocalPosition_PubSubTopic/z"/>
-       <curve color="#ff6e00" name="/tii/VehicleVisualOdometry_PubSubTopic/z"/>
        <curve color="#00ff38" name="/tii/DistanceSensor_PubSubTopic/current_distance">
         <transform alias="/tii/DistanceSensor_PubSubTopic/current_distance[Scale/Offset]" name="Scale/Offset">
          <options value_offset="0" value_scale="-1.0" time_offset="0"/>
@@ -46,7 +41,6 @@
        <range left="0.897321" bottom="-0.047035" right="7.837221" top="0.014939"/>
        <limitY/>
        <curve color="#1900ff" name="/tii/VehicleLocalPosition_PubSubTopic/vx"/>
-       <curve color="#1dff00" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/x"/>
       </plot>
      </DockArea>
      <DockArea name="...">
@@ -54,7 +48,6 @@
        <range left="0.897321" bottom="-0.017860" right="7.837221" top="0.034742"/>
        <limitY/>
        <curve color="#0e3dff" name="/tii/VehicleLocalPosition_PubSubTopic/vy"/>
-       <curve color="#00ff1a" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/y"/>
       </plot>
      </DockArea>
      <DockArea name="...">
@@ -62,7 +55,6 @@
        <range left="0.897321" bottom="-0.229039" right="7.837221" top="0.225966"/>
        <limitY/>
        <curve color="#1400ef" name="/tii/VehicleLocalPosition_PubSubTopic/vz"/>
-       <curve color="#00ff2b" name="/tii/odometry2/pixhawk_hector/twist/twist/linear/z"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -83,7 +75,6 @@
        <range left="0.897502" bottom="-0.000410" right="18.477250" top="0.000109"/>
        <limitY/>
        <curve color="#0009ff" name="/tii/VehicleOdometry_PubSubTopic/q.1"/>
-       <curve color="#14ff00" name="/tii/VehicleVisualOdometry_PubSubTopic/q.1"/>
       </plot>
      </DockArea>
      <DockArea name="...">
@@ -91,7 +82,6 @@
        <range left="0.897502" bottom="0.004717" right="18.477250" top="0.005540"/>
        <limitY/>
        <curve color="#0015ff" name="/tii/VehicleOdometry_PubSubTopic/q.2"/>
-       <curve color="#1ac938" name="/tii/VehicleVisualOdometry_PubSubTopic/q.2"/>
       </plot>
      </DockArea>
      <DockSplitter orientation="|" count="2" sizes="0.5;0.5">
@@ -100,7 +90,6 @@
         <range left="0.897502" bottom="-0.157174" right="18.477250" top="-0.156460"/>
         <limitY/>
         <curve color="#0004ff" name="/tii/VehicleOdometry_PubSubTopic/q.3"/>
-        <curve color="#0eff13" name="/tii/VehicleVisualOdometry_PubSubTopic/q.3"/>
        </plot>
       </DockArea>
       <DockArea name="...">
@@ -111,26 +100,6 @@
        </plot>
       </DockArea>
      </DockSplitter>
-    </DockSplitter>
-   </Container>
-  </Tab>
-  <Tab containers="1" tab_name="Timestamps">
-   <Container>
-    <DockSplitter orientation="-" count="2" sizes="0.500526;0.499474">
-     <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries">
-       <range left="0.897502" bottom="1972135798.000000" right="12.041202" top="1983877948.000000"/>
-       <limitY/>
-       <curve color="#1f77b4" name="/tii/VehicleOdometry_PubSubTopic/timestamp"/>
-      </plot>
-     </DockArea>
-     <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries">
-       <range left="0.897502" bottom="2013440393.050000" right="12.041202" top="2025181490.950000"/>
-       <limitY/>
-       <curve color="#d62728" name="/tii/VehicleOdometry_PubSubTopic/timestamp_sample"/>
-      </plot>
-     </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
@@ -235,12 +204,8 @@
     <topic name="/tii/VehicleGpsPosition_PubSubTopic"/>
     <topic name="/tii/VehicleLocalPosition_PubSubTopic"/>
     <topic name="/tii/VehicleOdometry_PubSubTopic"/>
-    <topic name="/tii/VehicleVisualOdometry_PubSubTopic"/>
     <topic name="/tii/garmin/range"/>
-    <topic name="/tii/odometry2/local_hector"/>
     <topic name="/tii/odometry2/local_odom"/>
-    <topic name="/tii/odometry2/pixhawk_hector"/>
-    <topic name="/tii/hector_mapping/slam_out_pose"/>
    </selected_topics>
   </plugin>
   <plugin ID="UDP Server"/>

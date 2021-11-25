@@ -226,7 +226,8 @@ bool Odometry2::setPx4FloatParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4Par
 void Odometry2::odometryRoutine(void) {
 
   if (is_initialized_ && getting_pixhawk_odom_) {
-    RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Everything ready -> Publishing odometry.", this->get_name());
+    RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Everything ready -> Publishing odometry", this->get_name());
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Publishing odometry", this->get_name());
 
     if (!set_initial_px4_params_) {
       setInitialPx4Params();
