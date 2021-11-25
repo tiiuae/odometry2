@@ -2,6 +2,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/time.hpp>
 
+#include <tf2/exceptions.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
@@ -47,6 +48,7 @@ private:
   std::shared_ptr<tf2_ros::TransformListener>          tf_listener_;
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
+  geometry_msgs::msg::TransformStamped                 tf_world_to_ned_origin_frame_;
 
   // | ---------------------- PX parameters --------------------- |
   std::vector<px4_int>   px4_params_int_;
@@ -78,11 +80,8 @@ private:
   // | ------------------- Internal functions ------------------- |
   bool setInitialPx4Params();
 
-  geometry_msgs::msg::PoseStamped transformBetween(const std::string &frame_from, const std::string &frame_to);
-
-  void publishTF();
   void publishStaticTF();
-  void publishLocalOdom();
+  void publishLocalOdomAndTF();
 
   // | -------------------- Routine handling -------------------- |
   rclcpp::CallbackGroup::SharedPtr callback_group_;
@@ -239,8 +238,7 @@ void Odometry2::odometryRoutine(void) {
       publishStaticTF();
     }
 
-    publishTF();
-    publishLocalOdom();
+    publishLocalOdomAndTF();
 
   } else {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Waiting for PX4 odometry.", this->get_name());
@@ -281,12 +279,14 @@ void Odometry2::publishStaticTF() {
   tf.transform.rotation.w = q.getW();
   v_transforms.push_back(tf);
 
+  tf_world_to_ned_origin_frame_ = tf;
+
   static_tf_broadcaster_->sendTransform(v_transforms);
 }
 //}
 
-/* publishTF //{ */
-void Odometry2::publishTF() {
+/* publishLocalOdomAndTF //{ */
+void Odometry2::publishLocalOdomAndTF() {
   std::scoped_lock lock(px4_pose_mutex_);
 
   if (tf_broadcaster_ == nullptr) {
@@ -305,50 +305,31 @@ void Odometry2::publishTF() {
   tf.transform.rotation.x    = px4_orientation_[1];
   tf.transform.rotation.y    = px4_orientation_[2];
   tf.transform.rotation.z    = px4_orientation_[3];
-  /* RCLCPP_INFO_STREAM(this->get_logger(), px4_position_[0] << ", "<< px4_position_[1] << ", "<< px4_position_[2]); */
   tf_broadcaster_->sendTransform(tf);
-}
-//}
 
-/* publishLocalOdom //{ */
-void Odometry2::publishLocalOdom() {
-  const geometry_msgs::msg::PoseStamped tf = transformBetween(fcu_frame_, world_frame_);
+  geometry_msgs::msg::PoseStamped pose_ned, pose_enu;
+
+  pose_ned.pose.position.x    = px4_position_[0];
+  pose_ned.pose.position.y    = px4_position_[1];
+  pose_ned.pose.position.z    = px4_position_[2];
+  pose_ned.pose.orientation.w = px4_orientation_[0];
+  pose_ned.pose.orientation.x = px4_orientation_[1];
+  pose_ned.pose.orientation.y = px4_orientation_[2];
+  pose_ned.pose.orientation.z = px4_orientation_[3];
+
+  tf2::doTransform(pose_ned, pose_enu, tf_world_to_ned_origin_frame_);
 
   nav_msgs::msg::Odometry msg;
 
-  msg.header.stamp            = this->get_clock()->now();
-  msg.header.frame_id         = world_frame_;
-  msg.child_frame_id          = fcu_frame_;
-  msg.pose.pose.position.x    = tf.pose.position.x;
-  msg.pose.pose.position.y    = tf.pose.position.y;
-  msg.pose.pose.position.z    = tf.pose.position.z;
-  msg.pose.pose.orientation.x = tf.pose.orientation.x;
-  msg.pose.pose.orientation.y = tf.pose.orientation.y;
-  msg.pose.pose.orientation.z = tf.pose.orientation.z;
-  msg.pose.pose.orientation.w = tf.pose.orientation.w;
+  msg.header.stamp    = this->get_clock()->now();
+  msg.header.frame_id = world_frame_;
+  msg.child_frame_id  = fcu_frame_;
+  msg.pose.pose       = pose_enu.pose;
 
-  /* RCLCPP_INFO_STREAM(this->get_logger(), tf.pose.position.x << ", "<< tf.pose.position.y << ", "<< tf.pose.position.z); */
+  /* RCLCPP_INFO_STREAM(this->get_logger(), px4_position_[0] << ", " << px4_position_[1] << ", " << px4_position_[2]); */
+  /* RCLCPP_INFO_STREAM(this->get_logger(), pose_enu.pose.position.x << ", " << pose_enu.pose.position.y << ", " << pose_enu.pose.position.z); */
   /* RCLCPP_INFO_STREAM(this->get_logger(), "-------------------------------"); */
   local_odom_publisher_->publish(msg);
-}
-//}
-
-/* transformBetween //{ */
-geometry_msgs::msg::PoseStamped Odometry2::transformBetween(const std::string &frame_from, const std::string &frame_to) {
-  geometry_msgs::msg::PoseStamped pose_out;
-  try {
-    auto transform_stamped      = tf_buffer_->lookupTransform(frame_to, frame_from, rclcpp::Time(0));
-    pose_out.pose.position.x    = transform_stamped.transform.translation.x;
-    pose_out.pose.position.y    = transform_stamped.transform.translation.y;
-    pose_out.pose.position.z    = transform_stamped.transform.translation.z;
-    pose_out.pose.orientation.w = transform_stamped.transform.rotation.w;
-    pose_out.pose.orientation.x = transform_stamped.transform.rotation.x;
-    pose_out.pose.orientation.y = transform_stamped.transform.rotation.y;
-    pose_out.pose.orientation.z = transform_stamped.transform.rotation.z;
-  }
-  catch (...) {
-  }
-  return pose_out;
 }
 //}
 

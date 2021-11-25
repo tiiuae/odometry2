@@ -24,7 +24,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
-)
+  )
 
 ## --------------------------------------------------------------
 ## |                      odometry2 package                     |
@@ -38,7 +38,7 @@ ament_target_dependencies(odometry2
   rclcpp
   rclcpp_components
   std_msgs
-  nav_msgs 
+  nav_msgs
   fog_msgs
   px4_msgs
   tf2
@@ -46,8 +46,8 @@ ament_target_dependencies(odometry2
   tf2_geometry_msgs
   )
 
-rclcpp_components_register_nodes(odometry2 
-  PLUGIN "${PROJECT_NAME}::Odometry2" 
+rclcpp_components_register_nodes(odometry2
+  PLUGIN "${PROJECT_NAME}::Odometry2"
   EXECUTABLE odometry2)
 
 ## --------------------------------------------------------------
