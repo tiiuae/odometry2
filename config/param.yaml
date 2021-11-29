@@ -5,13 +5,13 @@ odometry_loop_rate: 50.0 # [Hz]
 px4:
   EKF2_AID_MASK: 1 # default mask - use only gps
 
-  EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
-  EKF2_RNG_A_HMAX: 5.0 # Max height to use rangerfinder for fusion in aid mode
-
   # Default source of height estimation  - will be changed according to sensor reliability:
   # 0 - only barometer mode,
   # 1 - only gps,
   # 2 - rangefinder height mode
   EKF2_HGT_MODE: 2
+  EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
+  EKF2_RNG_A_HMAX: 5.0 # Max height to use rangerfinder for fusion in aid mode
+
 
 # # #}
