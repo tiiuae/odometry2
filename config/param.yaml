@@ -11,7 +11,6 @@ px4:
   # 2 - rangefinder height mode
   EKF2_HGT_MODE: 2
   EKF2_RNG_AID: 1 # Using the range sensor to estimate height if specific conditions are met
-  EKF2_RNG_A_HMAX: 5.0 # Max height to use rangerfinder for fusion in aid mode
-
+  EKF2_RNG_A_HMAX: 5.0 # Max height to use rangefinder for fusion in aid mode
 
 # # #}
