@@ -144,9 +144,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   //}
 
   /* frame definition */
-  fcu_frame_        = uav_name_ + "/fcu";  // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
-  frd_fcu_frame_    = uav_name_ + "/frd_fcu"; // FRD frame (Front-Right-Down)
-  ned_origin_frame_ = uav_name_ + "/ned_origin"; // NED frame (North-East-Down)
+  fcu_frame_        = uav_name_ + "/fcu";         // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  frd_fcu_frame_    = uav_name_ + "/frd_fcu";     // FRD frame (Front-Right-Down)
+  ned_origin_frame_ = uav_name_ + "/ned_origin";  // NED frame (North-East-Down)
 
   // publishers
   local_odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
@@ -310,23 +310,22 @@ void Odometry2::publishLocalOdomAndTF() {
   tf_broadcaster_->sendTransform(tf);
 
   // frd -> flu (enu) is rotation 180 degrees around x
-  tf2::Quaternion q_orig, q_rot, q_new; 
+  tf2::Quaternion q_orig, q_rot, q_new;
 
-  q_orig.setW(px4_orientation_[0]); 
-  q_orig.setX(px4_orientation_[1]); 
-  q_orig.setY(px4_orientation_[2]); 
-  q_orig.setZ(px4_orientation_[3]); 
+  q_orig.setW(px4_orientation_[0]);
+  q_orig.setX(px4_orientation_[1]);
+  q_orig.setY(px4_orientation_[2]);
+  q_orig.setZ(px4_orientation_[3]);
 
-  q_rot.setRPY(0,-M_PI,0); 
-  
-  q_new = q_rot * q_orig; 
-  q_new.normalize(); 
+  q_rot.setRPY(M_PI, 0, 0);
+  q_new = q_orig * q_rot;
+  q_new.normalize();
 
   geometry_msgs::msg::PoseStamped pose_ned, pose_enu;
 
-  pose_ned.pose.position.x    = px4_position_[0];
-  pose_ned.pose.position.y    = px4_position_[1];
-  pose_ned.pose.position.z    = px4_position_[2];
+  pose_ned.pose.position.x = px4_position_[0];
+  pose_ned.pose.position.y = px4_position_[1];
+  pose_ned.pose.position.z = px4_position_[2];
   tf2::convert(q_new, pose_ned.pose.orientation);
 
   tf2::doTransform(pose_ned, pose_enu, tf_world_to_ned_origin_frame_);
@@ -335,12 +334,9 @@ void Odometry2::publishLocalOdomAndTF() {
 
   msg.header.stamp    = this->get_clock()->now();
   msg.header.frame_id = world_frame_;
-  msg.child_frame_id  = frd_fcu_frame_;
-  msg.pose.pose       = pose_enu.pose;
+  msg.child_frame_id = frd_fcu_frame_;
+  msg.pose.pose      = pose_enu.pose;
 
-  /* RCLCPP_INFO_STREAM(this->get_logger(), px4_position_[0] << ", " << px4_position_[1] << ", " << px4_position_[2]); */
-  /* RCLCPP_INFO_STREAM(this->get_logger(), pose_enu.pose.position.x << ", " << pose_enu.pose.position.y << ", " << pose_enu.pose.position.z); */
-  /* RCLCPP_INFO_STREAM(this->get_logger(), "-------------------------------"); */
   local_odom_publisher_->publish(msg);
 }
 //}
