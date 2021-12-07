@@ -15,12 +15,14 @@
 #include <fog_msgs/srv/set_px4_param_float.hpp>
 
 #include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <px4_msgs/msg/home_position.hpp>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // This has to be here otherwise you will get cryptic linker error about missing function 'getTimestamp'
-
 #include <nav_msgs/msg/odometry.hpp>
 
 #include <std_msgs/msg/string.hpp>
+
+#include <gps_conversions.h>
 
 typedef std::tuple<std::string, int>   px4_int;
 typedef std::tuple<std::string, float> px4_float;
@@ -39,11 +41,12 @@ private:
   std::atomic_bool is_initialized_ = false;
 
   // | ------------------------ TF frames ----------------------- |
-  std::string uav_name_         = "";
-  std::string world_frame_      = "";
-  std::string ned_origin_frame_ = "";
-  std::string frd_fcu_frame_    = "";
-  std::string fcu_frame_        = "";
+  std::string uav_name_           = "";
+  std::string gps_origin_frame_   = "";
+  std::string local_origin_frame_ = "";
+  std::string ned_origin_frame_   = "";
+  std::string frd_fcu_frame_      = "";
+  std::string fcu_frame_          = "";
 
   // | ---------------------- TF variables ---------------------- |
   std::shared_ptr<tf2_ros::Buffer>                     tf_buffer_;
@@ -55,18 +58,29 @@ private:
   // | ---------------------- PX parameters --------------------- |
   std::vector<px4_int>   px4_params_int_;
   std::vector<px4_float> px4_params_float_;
-  std::atomic_bool       set_initial_px4_params_ = false;
-  std::atomic_bool       getting_pixhawk_odom_   = false;
+  std::atomic_bool       set_initial_px4_params_   = false;
+  std::atomic_bool       getting_pixhawk_odom_     = false;
+  std::atomic_bool       getting_px4_utm_position_ = false;
 
   float      px4_position_[3];
   float      px4_orientation_[4];
   std::mutex px4_pose_mutex_;
 
+  float      px4_utm_position_[2];
+  std::mutex px4_utm_position_mutex_;
+
+  px4_msgs::msg::HomePosition  px4_home_position_;
+  rclcpp::TimerBase::SharedPtr home_position_timer_;
+  std::mutex                   px4_home_position_mutex_;
+
+
   // | ----------------------- Publishers ----------------------- |
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr     local_odom_publisher_;
+  rclcpp::Publisher<px4_msgs::msg::HomePosition>::SharedPtr home_position_publisher_;
 
   // | ----------------------- Subscribers ---------------------- |
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr pixhawk_odom_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::HomePosition>::SharedPtr    home_position_subscriber_;
 
   // | --------------------- Service clients -------------------- |
   rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedPtr   set_px4_param_int_;
@@ -74,6 +88,7 @@ private:
 
   // | ------------------ Subscriber callbacks ------------------ |
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
+  void homePositionCallback(const px4_msgs::msg::HomePosition::UniquePtr msg);
 
   // | ---------------- Service clients handlers ---------------- |
   bool setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedFuture future);
@@ -88,9 +103,10 @@ private:
   // | -------------------- Routine handling -------------------- |
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::TimerBase::SharedPtr     odometry_timer_;
-  double                           odometry_loop_rate_;
+  double                           odometry_loop_rate_, home_position_publish_rate_;
 
   void odometryRoutine(void);
+  void homePositionPublisher(void);
 
   // utils
   template <class T>
@@ -117,6 +133,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   bool loaded_successfully = true;
 
   loaded_successfully &= parse_param("odometry_loop_rate", odometry_loop_rate_);
+  loaded_successfully &= parse_param("home_position_publish_rate", home_position_publish_rate_);
 
   int   param_int;
   float param_float;
@@ -133,8 +150,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   loaded_successfully &= parse_param("px4.EKF2_RNG_A_HMAX", param_float);
   px4_params_float_.push_back(px4_float("EKF2_RNG_A_HMAX", param_float));
 
-  loaded_successfully &= parse_param("world_frame", world_frame_);
-
   if (!loaded_successfully) {
     const std::string str = "Could not load all non-optional parameters. Shutting down.";
     RCLCPP_ERROR(this->get_logger(), str);
@@ -144,16 +159,21 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   //}
 
   /* frame definition */
-  fcu_frame_        = uav_name_ + "/fcu";         // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
-  frd_fcu_frame_    = uav_name_ + "/frd_fcu";     // FRD frame (Front-Right-Down)
-  ned_origin_frame_ = uav_name_ + "/ned_origin";  // NED frame (North-East-Down)
+  gps_origin_frame_   = uav_name_ + "/gps_origin";    // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  local_origin_frame_ = uav_name_ + "/local_origin";  // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  fcu_frame_          = uav_name_ + "/fcu";           // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  frd_fcu_frame_      = uav_name_ + "/frd_fcu";       // FRD frame (Front-Right-Down)
+  ned_origin_frame_   = uav_name_ + "/ned_origin";    // NED frame (North-East-Down)
 
   // publishers
-  local_odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
+  local_odom_publisher_    = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
+  home_position_publisher_ = this->create_publisher<px4_msgs::msg::HomePosition>("~/home_position_out", 10);
 
   // subscribers
-  pixhawk_odom_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
+  pixhawk_odom_subscriber_  = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
                                                                                        std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
+  home_position_subscriber_ = this->create_subscription<px4_msgs::msg::HomePosition>("~/home_position_in", rclcpp::SystemDefaultsQoS(),
+                                                                                     std::bind(&Odometry2::homePositionCallback, this, _1));
   // service clients
   set_px4_param_int_   = this->create_client<fog_msgs::srv::SetPx4ParamInt>("~/set_px4_param_int");
   set_px4_param_float_ = this->create_client<fog_msgs::srv::SetPx4ParamFloat>("~/set_px4_param_float");
@@ -161,6 +181,8 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   odometry_timer_ =
       this->create_wall_timer(std::chrono::duration<double>(1.0 / odometry_loop_rate_), std::bind(&Odometry2::odometryRoutine, this), callback_group_);
+  home_position_timer_ = this->create_wall_timer(std::chrono::duration<double>(1.0 / home_position_publish_rate_),
+                                                 std::bind(&Odometry2::homePositionPublisher, this), callback_group_);
 
   tf_broadcaster_        = nullptr;
   static_tf_broadcaster_ = nullptr;
@@ -195,6 +217,61 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 }
 //}
 
+/* homePositionCallback //{ */
+void Odometry2::homePositionCallback(const px4_msgs::msg::HomePosition::UniquePtr msg) {
+  if (!is_initialized_.load()) {
+    return;
+  }
+
+  {
+    std::scoped_lock lock(px4_home_position_mutex_);
+
+    px4_home_position_.timestamp =
+        msg->timestamp;  // TODO:: Timestamp will be still the same but is it important? At least we know the last published message time
+    px4_home_position_.lat = msg->lat;
+    px4_home_position_.lon = msg->lon;
+    px4_home_position_.alt = msg->alt;
+
+    px4_home_position_.x = msg->x;
+    px4_home_position_.y = msg->y;
+    px4_home_position_.z = msg->z;
+
+    px4_home_position_.yaw = msg->yaw;
+
+    px4_home_position_.valid_alt  = msg->valid_alt;
+    px4_home_position_.valid_hpos = msg->valid_hpos;
+    px4_home_position_.valid_lpos = msg->valid_lpos;
+
+    px4_home_position_.manual_home = msg->manual_home;
+  }
+
+  double out_x, out_y;
+
+  UTM(msg->lat, msg->lon, &out_x, &out_y);
+
+  if (!std::isfinite(out_x)) {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: NaN detected in UTM variable \"out_x\"!!!", this->get_name());
+    return;
+  }
+
+  if (!std::isfinite(out_y)) {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[%s]: NaN detected in UTM variable \"out_y\"!!!", this->get_name());
+    return;
+  }
+
+  {
+    std::scoped_lock lock(px4_utm_position_mutex_);
+
+    px4_utm_position_[0] = out_x;
+    px4_utm_position_[1] = out_y;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin set! UTM x: %.2f, y: %.2f", this->get_name(), out_x, out_y);
+
+  getting_px4_utm_position_ = true;
+}
+//}
+
 /* setPx4ParamIntCallback //{ */
 bool Odometry2::setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedFuture future) {
   std::shared_ptr<fog_msgs::srv::SetPx4ParamInt::Response> result = future.get();
@@ -226,7 +303,7 @@ bool Odometry2::setPx4FloatParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4Par
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
 
-  if (is_initialized_ && getting_pixhawk_odom_) {
+  if (is_initialized_ && getting_pixhawk_odom_ && getting_px4_utm_position_) {
     RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Everything ready -> Publishing odometry", this->get_name());
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Publishing odometry", this->get_name());
 
@@ -243,8 +320,16 @@ void Odometry2::odometryRoutine(void) {
     publishLocalOdomAndTF();
 
   } else {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Waiting for PX4 odometry.", this->get_name());
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Waiting for sensor initialization; PX4_ODOM: %d, HOME_POSITION: %d",
+                         this->get_name(), getting_pixhawk_odom_.load(), getting_px4_utm_position_.load());
   }
+}
+//}
+
+/* homePositionPublisher //{ */
+void Odometry2::homePositionPublisher(void) {
+  std::scoped_lock lock(px4_home_position_mutex_);
+  home_position_publisher_->publish(px4_home_position_);
 }
 //}
 
@@ -268,7 +353,7 @@ void Odometry2::publishStaticTF() {
   tf.transform.rotation.w = q.getW();
   v_transforms.push_back(tf);
 
-  tf.header.frame_id         = world_frame_;
+  tf.header.frame_id         = local_origin_frame_;
   tf.child_frame_id          = ned_origin_frame_;
   tf.transform.translation.x = 0.0;
   tf.transform.translation.y = 0.0;
@@ -295,9 +380,22 @@ void Odometry2::publishLocalOdomAndTF() {
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this->shared_from_this());
   }
 
+  std::vector<geometry_msgs::msg::TransformStamped> v_transforms;
+
   geometry_msgs::msg::TransformStamped tf;
 
   tf.header.stamp            = this->get_clock()->now();
+  tf.header.frame_id         = local_origin_frame_;
+  tf.child_frame_id          = gps_origin_frame_;
+  tf.transform.translation.x = px4_utm_position_[0];
+  tf.transform.translation.y = px4_utm_position_[1];
+  tf.transform.translation.z = 0;
+  tf.transform.rotation.w    = 1;
+  tf.transform.rotation.x    = 0;
+  tf.transform.rotation.y    = 0;
+  tf.transform.rotation.z    = 0;
+  v_transforms.push_back(tf);
+
   tf.header.frame_id         = ned_origin_frame_;
   tf.child_frame_id          = frd_fcu_frame_;
   tf.transform.translation.x = px4_position_[0];
@@ -307,7 +405,9 @@ void Odometry2::publishLocalOdomAndTF() {
   tf.transform.rotation.x    = px4_orientation_[1];
   tf.transform.rotation.y    = px4_orientation_[2];
   tf.transform.rotation.z    = px4_orientation_[3];
-  tf_broadcaster_->sendTransform(tf);
+  v_transforms.push_back(tf);
+
+  tf_broadcaster_->sendTransform(v_transforms);
 
   // frd -> flu (enu) is rotation 180 degrees around x
   tf2::Quaternion q_orig, q_rot, q_new;
@@ -333,9 +433,9 @@ void Odometry2::publishLocalOdomAndTF() {
   nav_msgs::msg::Odometry msg;
 
   msg.header.stamp    = this->get_clock()->now();
-  msg.header.frame_id = world_frame_;
-  msg.child_frame_id = frd_fcu_frame_;
-  msg.pose.pose      = pose_enu.pose;
+  msg.header.frame_id = local_origin_frame_;
+  msg.child_frame_id  = frd_fcu_frame_;
+  msg.pose.pose       = pose_enu.pose;
 
   local_odom_publisher_->publish(msg);
 }

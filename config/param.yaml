@@ -1,5 +1,5 @@
 odometry_loop_rate: 50.0 # [Hz]
-# world_frame: now set by launch file argument
+home_position_publish_rate: 1.0 # [Hz]
 
 # px4 # #{
 px4:

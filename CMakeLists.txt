@@ -23,6 +23,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
 include_directories(
+  include
   ${rclcpp_INCLUDE_DIRS}
   )
 

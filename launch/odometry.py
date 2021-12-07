@@ -15,7 +15,6 @@ def generate_launch_description():
  
     ld.add_action(launch.actions.DeclareLaunchArgument("use_sim_time", default_value="false"))
     ld.add_action(launch.actions.DeclareLaunchArgument("debug", default_value="false"))
-    ld.add_action(launch.actions.DeclareLaunchArgument("world_frame", default_value="world"))
 
     dbg_sub = None
     if sys.stdout.isatty():
@@ -38,13 +37,14 @@ def generate_launch_description():
                 parameters=[
                     pkg_share_path + '/config/param.yaml',
                     {"use_sim_time": launch.substitutions.LaunchConfiguration("use_sim_time")},
-                    {"world_frame": launch.substitutions.LaunchConfiguration("world_frame")},
                 ],
                 remappings=[
                     # publishers
                     ("~/local_odom_out", "~/local_odom"),
+                    ("~/home_position_out", "~/home_position"),
                     # subscribers
                     ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
+                    ("~/home_position_in", "/" + DRONE_DEVICE_ID + "/HomePosition_PubSubTopic"),
                     # service_clients
                     ("~/set_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_int"),
                     ("~/set_px4_param_float", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_float"),
