@@ -1,0 +1,9 @@
+repositories:
+  src/px4_msgs:
+    type: git
+    url: https://github.com/tiiuae/PX4-msgs.git
+    version: tags/rebase_backup_141021
+  src/fog_msgs:
+    type: git
+    url: https://github.com/tiiuae/fog_msgs.git
+    version: tags/0.0.8
