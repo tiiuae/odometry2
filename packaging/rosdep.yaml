@@ -1,5 +1,4 @@
 px4_msgs:
-    ubuntu: ros-foxy-px4-msgs
-
+  ubuntu: ros-ROS_DISTRO-px4-msgs=3.0.0*
 fog_msgs:
-    ubuntu: ros-foxy-fog-msgs
+  ubuntu: ros-ROS_DISTRO-fog-msgs=0.0.8*

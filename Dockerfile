@@ -1,11 +1,13 @@
 # fog-sw BUILDER
-FROM ros:foxy-ros-base as fog-sw-builder
+ARG ROS_DISTRO="galactic"
+FROM ros:${ROS_DISTRO}-ros-base as fog-sw-builder
 
 ARG UID=1000
 ARG GID=1000
 ARG BUILD_NUMBER
 ARG COMMIT_ID
 ARG GIT_VER
+ARG PACKAGE_NAME
 
 # Install build dependencies
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
@@ -21,18 +23,20 @@ RUN groupadd -g $GID builder && \
     usermod -aG sudo builder && \
     echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-RUN mkdir -p /odometry2/packaging
+RUN echo "deb [trusted=yes] https://ssrc.jfrog.io/artifactory/ssrc-debian-public-remote focal fog-sw" >> /etc/apt/sources.list
 
-COPY packaging/rosdep.yaml packaging/rosdep.sh /odometry2/packaging/
-COPY underlay.repos /odometry2/
+RUN mkdir -p /$PACKAGE_NAME/packaging
 
-RUN /odometry2/packaging/rosdep.sh /odometry2
+COPY packaging/rosdep.yaml packaging/rosdep.sh /$PACKAGE_NAME/packaging/
+COPY underlay.repos package.xml /$PACKAGE_NAME/
 
-RUN chown -R builder:builder /odometry2
+RUN /$PACKAGE_NAME/packaging/rosdep.sh /$PACKAGE_NAME
+
+RUN chown -R builder:builder /$PACKAGE_NAME
 
 USER builder
 
-VOLUME /odometry2/sources
-WORKDIR /odometry2/sources
+VOLUME /$PACKAGE_NAME/sources
+WORKDIR /$PACKAGE_NAME/sources
 
 RUN rosdep update

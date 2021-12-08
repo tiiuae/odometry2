@@ -74,12 +74,20 @@ version=$(grep "<version>" package.xml | sed 's/[^>]*>\([^<"]*\).*/\1/')
 
 echo "[INFO] Version: ${version}."
 
-${mod_dir}/packaging/build_deps.sh ${mod_dir}
+# Check if dependencies are satisfied, run build_deps if not
+if rosdep check --from-paths ${mod_dir} 1> /dev/null 2>&1; then
+    echo "[INFO] Dependencies are satisfied."
+else
+    echo "[INFO] System dependencies have not been satisfied."
+    echo "[INFO] Building dependencies using underlay.repos."
+    ${mod_dir}/packaging/build_deps.sh ${mod_dir}
+fi
 
 if [ -e ${mod_dir}/ros2_ws ]; then
 	# From fog-sw repo.
 	source ${mod_dir}/ros2_ws/install/setup.bash
-else
+fi
+if [ -e ${mod_dir}/deps_ws ]; then
 	source ${mod_dir}/deps_ws/install/setup.bash
 fi
 
@@ -88,6 +96,7 @@ bloom-generate rosdebian --os-name ubuntu --os-version focal --ros-distro ${ROS_
     && [ ! "$distr" = "" ] && sed -i "s/@(Distribution)/${distr}/" debian/changelog.em || : \
     && bloom-generate rosdebian --os-name ubuntu --os-version focal --ros-distro ${ROS_DISTRO} --process-template-files -i ${build_nbr}${git_version_string} \
     && sed -i 's/^\tdh_shlibdeps.*/& --dpkg-shlibdeps-params=--ignore-missing-info/g' debian/rules \
+	&& sed -i "s/\=\([0-9]*\.[0-9]*\.[0-9]*\*\)//g" debian/control \
     && fakeroot debian/rules clean \
     && fakeroot debian/rules binary || exit 1
 
