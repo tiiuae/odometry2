@@ -8,6 +8,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
 
 #include <fog_msgs/srv/get_px4_param_int.hpp>
 #include <fog_msgs/srv/set_px4_param_int.hpp>
@@ -137,7 +138,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
 
   if (!loaded_successfully) {
     const std::string str = "Could not load all non-optional parameters. Shutting down.";
-    RCLCPP_ERROR(this->get_logger(), str);
+    RCLCPP_ERROR(this->get_logger(), "%s", str.c_str());
     rclcpp::shutdown();
     return;
   }
@@ -199,7 +200,7 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 bool Odometry2::setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedFuture future) {
   std::shared_ptr<fog_msgs::srv::SetPx4ParamInt::Response> result = future.get();
   if (result->success) {
-    RCLCPP_INFO(this->get_logger(), "[%s]: Parameter %s has been set to value: %d", this->get_name(), result->param_name.c_str(), result->value);
+    RCLCPP_INFO(this->get_logger(), "[%s]: Parameter %s has been set to value: %ld", this->get_name(), result->param_name.c_str(), result->value);
     return true;
   } else {
     RCLCPP_ERROR(this->get_logger(), "[%s]: Cannot set the parameter %s with message: %s", this->get_name(), result->param_name.c_str(),
@@ -334,8 +335,8 @@ void Odometry2::publishLocalOdomAndTF() {
 
   msg.header.stamp    = this->get_clock()->now();
   msg.header.frame_id = world_frame_;
-  msg.child_frame_id = frd_fcu_frame_;
-  msg.pose.pose      = pose_enu.pose;
+  msg.child_frame_id  = frd_fcu_frame_;
+  msg.pose.pose       = pose_enu.pose;
 
   local_odom_publisher_->publish(msg);
 }
