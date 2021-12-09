@@ -368,7 +368,7 @@ bool Odometry2::setInitialPx4Params() {
 /* parse_param //{ */
 template <class T>
 bool Odometry2::parse_param(const std::string &param_name, T &param_dest) {
-  this->declare_parameter(param_name);
+  this->declare_parameter<T>(param_name);
   if (!this->get_parameter(param_name, param_dest)) {
     RCLCPP_ERROR(this->get_logger(), "[%s]: Could not load param '%s'", this->get_name(), param_name.c_str());
     return false;
