@@ -16,6 +16,17 @@ def get_submodules(c):
             submodules.append(line.split()[1])
     return submodules
 
+def get_iname_tag(image_name):
+    """
+    return tuple with image name and tag
+    """
+    if ":" in image_name:
+        iname, tag = image_name.split(":")
+    else:
+        iname, tag = image_name, "latest"
+    return iname, tag
+    
+
 @task
 def init(c):
     """
@@ -44,13 +55,15 @@ def build_env(c, nocache=False, pull=False, ros_distro="foxy", image_name=MODULE
     """
     Create Docker build environment.
     """
+    iname, tag = get_iname_tag(image_name)
+
     args = []
     args.append("--build-arg UID=$(id -u)")
     args.append("--build-arg GID=$(id -g)")
     args.append("--build-arg ROS_DISTRO=%s" % ros_distro)
-    args.append("--build-arg PACKAGE_NAME=%s" % image_name)
+    args.append("--build-arg PACKAGE_NAME=%s" % iname)
     args.append("-f Dockerfile.build_env")
-    args.append("-t %s:build_env" % image_name)
+    args.append("-t %s_build:%s" % (iname, tag))
     if nocache:
         args.append("--no-cache")
     elif pull:
@@ -82,7 +95,9 @@ def create_deb_package(c, out_dir="../bin/", ros_distro="foxy", image_name=MODUL
     """
     Build debian package
     """
-    c.run("ROS_DISTRO={0} PACKAGE_NAME={1} ./build.sh {2}".format(ros_distro, image_name, out_dir))
+    iname, tag = get_iname_tag(image_name)
+    c.run("ROS_DISTRO={0} PACKAGE_NAME={1} PACKAGE_VERSION={2} ./build.sh {3}"
+          .format(ros_distro, iname, tag, out_dir))
 
 @task(help={'nocache': "do not use cache when building the image",
           'pull': "always attempt to pull a newer version of the image",
@@ -97,18 +112,20 @@ def build_docker(c, nocache=False, pull=False, ros_distro="foxy", image_name=MOD
     col.add_task(build_env)
     col['build_env'](c, nocache=nocache, pull=pull, ros_distro=ros_distro, image_name=image_name)
     
+    iname, tag = get_iname_tag(image_name)
     args = []
     args.append("--build-arg UID=$(id -u)")
     args.append("--build-arg GID=$(id -g)")
     args.append("--build-arg ROS_DISTRO=%s" % ros_distro)
-    args.append("--build-arg PACKAGE_NAME=%s" % image_name)
-    args.append("--build-arg FROM_IMAGE=%s:build_env" % image_name)
+    args.append("--build-arg PACKAGE_NAME=%s" % iname)
+    args.append("--build-arg FROM_IMAGE=%s_build:%s" % (iname, tag))
     args.append("-f Dockerfile")
-    args.append("-t %s" % image_name)
+    args.append("-t %s:%s" % (iname, tag))
     if nocache:
         args.append("--no-cache")
     elif pull:
         args.append("--pull")
     with c.cd(THISDIR):
+        print("docker build %s ." % " ".join(args))
         c.run("docker build %s ." % " ".join(args))
 
