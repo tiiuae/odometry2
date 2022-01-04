@@ -15,6 +15,8 @@
 #include <fog_msgs/srv/get_px4_param_float.hpp>
 #include <fog_msgs/srv/set_px4_param_float.hpp>
 
+#include <fog_msgs/msg/control_interface_diagnostics.hpp>
+
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // This has to be here otherwise you will get cryptic linker error about missing function 'getTimestamp'
@@ -56,8 +58,9 @@ private:
   // | ---------------------- PX parameters --------------------- |
   std::vector<px4_int>   px4_params_int_;
   std::vector<px4_float> px4_params_float_;
-  std::atomic_bool       set_initial_px4_params_ = false;
-  std::atomic_bool       getting_pixhawk_odom_   = false;
+  std::atomic_bool       set_initial_px4_params_                = false;
+  std::atomic_bool       getting_pixhawk_odom_                  = false;
+  std::atomic_bool       getting_control_interface_diagnostics_ = false;
 
   float      px4_position_[3];
   float      px4_orientation_[4];
@@ -67,7 +70,8 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr local_odom_publisher_;
 
   // | ----------------------- Subscribers ---------------------- |
-  rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr pixhawk_odom_subscriber_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr             pixhawk_odom_subscriber_;
+  rclcpp::Subscription<fog_msgs::msg::ControlInterfaceDiagnostics>::SharedPtr control_interface_diagnostics_subscriber_;
 
   // | --------------------- Service clients -------------------- |
   rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedPtr   set_px4_param_int_;
@@ -75,6 +79,7 @@ private:
 
   // | ------------------ Subscriber callbacks ------------------ |
   void pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::UniquePtr msg);
+  void ControlInterfaceDiagnosticsCallback(const fog_msgs::msg::ControlInterfaceDiagnostics::UniquePtr msg);
 
   // | ---------------- Service clients handlers ---------------- |
   bool setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedFuture future);
@@ -153,8 +158,11 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   local_odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("~/local_odom_out", 10);
 
   // subscribers
-  pixhawk_odom_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
+  pixhawk_odom_subscriber_                  = this->create_subscription<px4_msgs::msg::VehicleOdometry>("~/pixhawk_odom_in", rclcpp::SystemDefaultsQoS(),
                                                                                        std::bind(&Odometry2::pixhawkOdomCallback, this, _1));
+  control_interface_diagnostics_subscriber_ = this->create_subscription<fog_msgs::msg::ControlInterfaceDiagnostics>(
+      "~/control_interface_diagnostics_in", rclcpp::SystemDefaultsQoS(), std::bind(&Odometry2::ControlInterfaceDiagnosticsCallback, this, _1));
+
   // service clients
   set_px4_param_int_   = this->create_client<fog_msgs::srv::SetPx4ParamInt>("~/set_px4_param_int");
   set_px4_param_float_ = this->create_client<fog_msgs::srv::SetPx4ParamFloat>("~/set_px4_param_float");
@@ -196,6 +204,22 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 }
 //}
 
+/* ControlInterfaceDiagnosticsCallback //{ */
+void Odometry2::ControlInterfaceDiagnosticsCallback([[maybe_unused]] const fog_msgs::msg::ControlInterfaceDiagnostics::UniquePtr msg) {
+  if (!is_initialized_) {
+    return;
+  }
+
+  getting_control_interface_diagnostics_ = true;
+  RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Getting control diagnostics!", this->get_name());
+  
+  // TODO: there is no proper way how to unsubscribe from a topic yet. This will at least delete subscriber. 
+  // However DDS layer is still receiving msgs until new timer/subsriber/service is registered. 
+  // See: https://answers.ros.org/question/354792/rclcpp-how-to-unsubscribe-from-a-topic/   
+  control_interface_diagnostics_subscriber_.reset();
+}
+//}
+
 /* setPx4ParamIntCallback //{ */
 bool Odometry2::setPx4IntParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedFuture future) {
   std::shared_ptr<fog_msgs::srv::SetPx4ParamInt::Response> result = future.get();
@@ -227,7 +251,7 @@ bool Odometry2::setPx4FloatParamCallback(rclcpp::Client<fog_msgs::srv::SetPx4Par
 /* odometryRoutine //{ */
 void Odometry2::odometryRoutine(void) {
 
-  if (is_initialized_ && getting_pixhawk_odom_) {
+  if (is_initialized_ && getting_pixhawk_odom_ && getting_control_interface_diagnostics_) {
     RCLCPP_INFO_ONCE(this->get_logger(), "[%s]: Everything ready -> Publishing odometry", this->get_name());
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Publishing odometry", this->get_name());
 
@@ -244,7 +268,8 @@ void Odometry2::odometryRoutine(void) {
     publishLocalOdomAndTF();
 
   } else {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Waiting for PX4 odometry.", this->get_name());
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Getting PX4 odometry: %s, Getting control_interface diagnostics: %s",
+                         this->get_name(), getting_pixhawk_odom_.load() ? "TRUE" : "FALSE", getting_control_interface_diagnostics_ ? "TRUE" : "FALSE");
   }
 }
 //}
