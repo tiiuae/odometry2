@@ -42,7 +42,7 @@ private:
 
   // | ------------------------ TF frames ----------------------- |
   std::string uav_name_           = "";
-  std::string gps_origin_frame_   = "";
+  std::string utm_origin_frame_   = "";
   std::string local_origin_frame_ = "";
   std::string ned_origin_frame_   = "";
   std::string frd_fcu_frame_      = "";
@@ -66,8 +66,9 @@ private:
   float      px4_orientation_[4];
   std::mutex px4_pose_mutex_;
 
-  float      px4_utm_position_[2];
-  std::mutex px4_utm_position_mutex_;
+  float            px4_utm_position_[2];
+  std::atomic_bool republish_static_tf_ = false;
+  std::mutex       px4_utm_position_mutex_;
 
   px4_msgs::msg::HomePosition  px4_home_position_;
   rclcpp::TimerBase::SharedPtr home_position_timer_;
@@ -159,7 +160,7 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   //}
 
   /* frame definition */
-  gps_origin_frame_   = uav_name_ + "/gps_origin";    // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  utm_origin_frame_   = uav_name_ + "/utm_origin";    // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
   local_origin_frame_ = uav_name_ + "/local_origin";  // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
   fcu_frame_          = uav_name_ + "/fcu";           // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
   frd_fcu_frame_      = uav_name_ + "/frd_fcu";       // FRD frame (Front-Right-Down)
@@ -264,6 +265,7 @@ void Odometry2::homePositionCallback(const px4_msgs::msg::HomePosition::UniquePt
 
     px4_utm_position_[0] = out_x;
     px4_utm_position_[1] = out_y;
+    republish_static_tf_ = true;
   }
 
   RCLCPP_INFO(this->get_logger(), "[%s]: GPS origin set! UTM x: %.2f, y: %.2f", this->get_name(), out_x, out_y);
@@ -317,6 +319,11 @@ void Odometry2::odometryRoutine(void) {
       publishStaticTF();
     }
 
+    if (republish_static_tf_) {
+      republish_static_tf_ = false;
+      publishStaticTF();
+    }
+
     publishLocalOdomAndTF();
 
   } else {
@@ -335,12 +342,16 @@ void Odometry2::homePositionPublisher(void) {
 
 /* publishStaticTF //{ */
 void Odometry2::publishStaticTF() {
+
   std::vector<geometry_msgs::msg::TransformStamped> v_transforms;
+
+  std::scoped_lock lock(px4_utm_position_mutex_);
 
   geometry_msgs::msg::TransformStamped tf;
   tf2::Quaternion                      q;
 
-  tf.header.stamp            = this->get_clock()->now();
+  tf.header.stamp = this->get_clock()->now();
+
   tf.header.frame_id         = frd_fcu_frame_;
   tf.child_frame_id          = fcu_frame_;
   tf.transform.translation.x = 0;
@@ -368,6 +379,17 @@ void Odometry2::publishStaticTF() {
 
   tf_world_to_ned_origin_frame_ = tf;
 
+  tf.header.frame_id         = utm_origin_frame_;
+  tf.child_frame_id          = local_origin_frame_;
+  tf.transform.translation.x = px4_utm_position_[0];
+  tf.transform.translation.y = px4_utm_position_[1];
+  tf.transform.translation.z = 0;
+  tf.transform.rotation.w    = 1;
+  tf.transform.rotation.x    = 0;
+  tf.transform.rotation.y    = 0;
+  tf.transform.rotation.z    = 0;
+  v_transforms.push_back(tf);
+
   static_tf_broadcaster_->sendTransform(v_transforms);
 }
 //}
@@ -384,17 +406,7 @@ void Odometry2::publishLocalOdomAndTF() {
 
   geometry_msgs::msg::TransformStamped tf;
 
-  tf.header.stamp            = this->get_clock()->now();
-  tf.header.frame_id         = local_origin_frame_;
-  tf.child_frame_id          = gps_origin_frame_;
-  tf.transform.translation.x = px4_utm_position_[0];
-  tf.transform.translation.y = px4_utm_position_[1];
-  tf.transform.translation.z = 0;
-  tf.transform.rotation.w    = 1;
-  tf.transform.rotation.x    = 0;
-  tf.transform.rotation.y    = 0;
-  tf.transform.rotation.z    = 0;
-  v_transforms.push_back(tf);
+  tf.header.stamp = this->get_clock()->now();
 
   tf.header.frame_id         = ned_origin_frame_;
   tf.child_frame_id          = frd_fcu_frame_;
