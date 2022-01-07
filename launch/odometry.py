@@ -45,6 +45,7 @@ def generate_launch_description():
                     # subscribers
                     ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
                     ("~/home_position_in", "/" + DRONE_DEVICE_ID + "/HomePosition_PubSubTopic"),
+                    ("~/control_interface_diagnostics_in", "/" + DRONE_DEVICE_ID + "/control_interface/diagnostics"),
                     # service_clients
                     ("~/set_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_int"),
                     ("~/set_px4_param_float", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_float"),
