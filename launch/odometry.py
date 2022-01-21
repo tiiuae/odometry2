@@ -43,8 +43,8 @@ def generate_launch_description():
                     ("~/local_odom_out", "~/local_odom"),
                     ("~/home_position_out", "~/home_position"),
                     # subscribers
-                    ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/VehicleOdometry_PubSubTopic"),
-                    ("~/home_position_in", "/" + DRONE_DEVICE_ID + "/HomePosition_PubSubTopic"),
+                    ("~/pixhawk_odom_in", "/" + DRONE_DEVICE_ID + "/fmu/vehicle_odometry/out"),
+                    ("~/home_position_in", "/" + DRONE_DEVICE_ID + "/fmu/home_position/out"),
                     ("~/control_interface_diagnostics_in", "/" + DRONE_DEVICE_ID + "/control_interface/diagnostics"),
                     # service_clients
                     ("~/set_px4_param_int", "/" + DRONE_DEVICE_ID + "/control_interface/set_px4_param_int"),
