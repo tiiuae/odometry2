@@ -38,7 +38,7 @@ jobs:
           tags: localhost:5000/tiiuae/odometry2:build_env
           build-args: |
             PACKAGE_NAME=odometry2
-            ROS_DISTRO=foxy
+            ROS_DISTRO=galactic
 
       - name: Docker meta
         id: meta
@@ -56,8 +56,8 @@ jobs:
         if: github.event_name == 'push'
         with:
           registry: ghcr.io
-          username: ${{ secrets.GCR_PACKAGES_USER }}
-          password: ${{ secrets.GCR_PACKAGES_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build tii-odometry2 image and push
         uses: docker/build-push-action@v2
@@ -68,5 +68,5 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             PACKAGE_NAME=odometry2
-            ROS_DISTRO=foxy
+            ROS_DISTRO=galactic
             FROM_IMAGE=localhost:5000/tiiuae/odometry2:build_env
