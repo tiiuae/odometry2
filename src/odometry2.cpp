@@ -25,10 +25,13 @@
 
 #include <std_msgs/msg/string.hpp>
 
+#include <fog_lib/params.h>
+
 typedef std::tuple<std::string, int>   px4_int;
 typedef std::tuple<std::string, float> px4_float;
 
 using namespace std::placeholders;
+using namespace fog_lib;
 
 namespace odometry2
 {
@@ -98,9 +101,6 @@ private:
 
   void odometryRoutine(void);
 
-  // utils
-  template <class T>
-  bool parse_param(const std::string &param_name, T &param_dest);
 };
 //}
 
@@ -122,24 +122,24 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   RCLCPP_INFO(this->get_logger(), "-------------- Loading parameters --------------");
   bool loaded_successfully = true;
 
-  loaded_successfully &= parse_param("odometry_loop_rate", odometry_loop_rate_);
+  loaded_successfully &= parse_param("odometry_loop_rate", odometry_loop_rate_, *this);
 
   int   param_int;
   float param_float;
 
-  loaded_successfully &= parse_param("px4.EKF2_AID_MASK", param_int);
+  loaded_successfully &= parse_param("px4.EKF2_AID_MASK", param_int, *this);
   px4_params_int_.push_back(px4_int("EKF2_AID_MASK", param_int));
 
-  loaded_successfully &= parse_param("px4.EKF2_RNG_AID", param_int);
+  loaded_successfully &= parse_param("px4.EKF2_RNG_AID", param_int, *this);
   px4_params_int_.push_back(px4_int("EKF2_RNG_AID", param_int));
 
-  loaded_successfully &= parse_param("px4.EKF2_HGT_MODE", param_int);
+  loaded_successfully &= parse_param("px4.EKF2_HGT_MODE", param_int, *this);
   px4_params_int_.push_back(px4_int("EKF2_HGT_MODE", param_int));
 
-  loaded_successfully &= parse_param("px4.EKF2_RNG_A_HMAX", param_float);
+  loaded_successfully &= parse_param("px4.EKF2_RNG_A_HMAX", param_float, *this);
   px4_params_float_.push_back(px4_float("EKF2_RNG_A_HMAX", param_float));
 
-  loaded_successfully &= parse_param("world_frame", world_frame_);
+  loaded_successfully &= parse_param("world_frame", world_frame_, *this);
 
   if (!loaded_successfully) {
     const std::string str = "Could not load all non-optional parameters. Shutting down.";
@@ -390,20 +390,6 @@ bool Odometry2::setInitialPx4Params() {
 }
 
 /*//}*/
-
-/* parse_param //{ */
-template <class T>
-bool Odometry2::parse_param(const std::string &param_name, T &param_dest) {
-  this->declare_parameter(param_name);
-  if (!this->get_parameter(param_name, param_dest)) {
-    RCLCPP_ERROR(this->get_logger(), "[%s]: Could not load param '%s'", this->get_name(), param_name.c_str());
-    return false;
-  } else {
-    RCLCPP_INFO_STREAM(this->get_logger(), "[" << this->get_name() << "]: Loaded '" << param_name << "' = '" << param_dest << "'");
-  }
-  return true;
-}
-//}
 
 }  // namespace odometry2
 
