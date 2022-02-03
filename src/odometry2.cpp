@@ -206,7 +206,8 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 
 /* ControlInterfaceDiagnosticsCallback //{ */
 void Odometry2::ControlInterfaceDiagnosticsCallback([[maybe_unused]] const fog_msgs::msg::ControlInterfaceDiagnostics::UniquePtr msg) {
-  if (!is_initialized_) {
+
+  if (!is_initialized_ || (msg->vehicle_state.state == fog_msgs::msg::ControlInterfaceVehicleState::NOT_CONNECTED)){ 
     return;
   }
 
