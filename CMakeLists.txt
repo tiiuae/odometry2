@@ -17,6 +17,7 @@ find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(fog_msgs REQUIRED)
+find_package(fog_lib REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -41,6 +42,7 @@ ament_target_dependencies(odometry2
   std_msgs
   nav_msgs
   fog_msgs
+  fog_lib
   px4_msgs
   tf2
   tf2_ros
