@@ -29,14 +29,14 @@
 
 #include "gps_conversions.h"
 
-typedef std::tuple<std::string, int>   px4_int;
-typedef std::tuple<std::string, float> px4_float;
-
 using namespace std::placeholders;
 using namespace fog_lib;
 
 namespace odometry2
 {
+
+typedef std::tuple<std::string, int>   px4_int;
+typedef std::tuple<std::string, float> px4_float;
 
 /* class Odometry2 //{ */
 class Odometry2 : public rclcpp::Node {
@@ -59,7 +59,7 @@ private:
   std::shared_ptr<tf2_ros::TransformListener>          tf_listener_;
   std::shared_ptr<tf2_ros::TransformBroadcaster>       tf_broadcaster_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
-  geometry_msgs::msg::TransformStamped                 tf_world_to_ned_origin_frame_;
+  geometry_msgs::msg::TransformStamped                 tf_local_origin_to_ned_origin_frame_;
 
   // | ---------------------- PX parameters --------------------- |
   std::vector<px4_int>   px4_params_int_;
@@ -73,7 +73,7 @@ private:
   float      px4_orientation_[4];
   std::mutex px4_pose_mutex_;
 
-  float            px4_utm_position_[2];
+  double           px4_utm_position_[2];
   std::atomic_bool republish_static_tf_ = false;
   std::mutex       px4_utm_position_mutex_;
 
@@ -89,6 +89,12 @@ private:
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr             pixhawk_odom_subscriber_;
   rclcpp::Subscription<px4_msgs::msg::HomePosition>::SharedPtr                home_position_subscriber_;
   rclcpp::Subscription<fog_msgs::msg::ControlInterfaceDiagnostics>::SharedPtr control_interface_diagnostics_subscriber_;
+
+  // callback groups
+  // a shared pointer to each callback group has to be saved or the callbacks will never get called
+  std::vector<rclcpp::CallbackGroup::SharedPtr> callback_groups_;
+  // new callback groups have to be initialized using this function to be saved into callback_groups_
+  rclcpp::CallbackGroup::SharedPtr new_cbk_grp();
 
   // | --------------------- Service clients -------------------- |
   rclcpp::Client<fog_msgs::srv::SetPx4ParamInt>::SharedPtr   set_px4_param_int_;
@@ -110,10 +116,7 @@ private:
   void publishLocalOdomAndTF();
 
   // | -------------------- Routine handling -------------------- |
-  rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::TimerBase::SharedPtr     odometry_timer_;
-  double                           odometry_loop_rate_;
-  double                           home_position_publish_rate_;
 
   void odometryRoutine(void);
   void homePositionPublisher(void);
@@ -139,8 +142,11 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   RCLCPP_INFO(this->get_logger(), "-------------- Loading parameters --------------");
   bool loaded_successfully = true;
 
-  loaded_successfully &= parse_param("odometry_loop_rate", odometry_loop_rate_, *this);
-  loaded_successfully &= parse_param("home_position_publish_rate", home_position_publish_rate_, *this);
+  double odometry_loop_rate;
+  double home_position_publish_rate;
+
+  loaded_successfully &= parse_param("odometry_loop_rate", odometry_loop_rate, *this);
+  loaded_successfully &= parse_param("home_position_publish_rate", home_position_publish_rate, *this);
 
   int   param_int;
   float param_float;
@@ -157,8 +163,6 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   loaded_successfully &= parse_param("px4.EKF2_RNG_A_HMAX", param_float, *this);
   px4_params_float_.push_back(px4_float("EKF2_RNG_A_HMAX", param_float));
 
-  loaded_successfully &= parse_param("world_frame", local_origin_frame_, *this);
-  
   if (!loaded_successfully) {
     const std::string str = "Could not load all non-optional parameters. Shutting down.";
     RCLCPP_ERROR(this->get_logger(), "%s", str.c_str());
@@ -168,9 +172,9 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   //}
 
   /* frame definition */
-  utm_origin_frame_   = uav_name_ + "/utm_origin";    // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
-  local_origin_frame_ = uav_name_ + "/local_origin";  // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
-  fcu_frame_          = uav_name_ + "/fcu";           // FLU frame (Front-Left-Up) match also ENU frame (East-North-Up)
+  utm_origin_frame_   = uav_name_ + "/utm_origin";    // ENU frame (East-North-Up)
+  local_origin_frame_ = uav_name_ + "/local_origin";  // ENU frame (East-North-Up)
+  fcu_frame_          = uav_name_ + "/fcu";           // FLU frame (Front-Left-Up)
   frd_fcu_frame_      = uav_name_ + "/frd_fcu";       // FRD frame (Front-Right-Down)
   ned_origin_frame_   = uav_name_ + "/ned_origin";    // NED frame (North-East-Down)
 
@@ -190,11 +194,10 @@ Odometry2::Odometry2(rclcpp::NodeOptions options) : Node("odometry2", options) {
   set_px4_param_int_   = this->create_client<fog_msgs::srv::SetPx4ParamInt>("~/set_px4_param_int");
   set_px4_param_float_ = this->create_client<fog_msgs::srv::SetPx4ParamFloat>("~/set_px4_param_float");
 
-  callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-  odometry_timer_ =
-      this->create_wall_timer(std::chrono::duration<double>(1.0 / odometry_loop_rate_), std::bind(&Odometry2::odometryRoutine, this), callback_group_);
-  home_position_timer_ = this->create_wall_timer(std::chrono::duration<double>(1.0 / home_position_publish_rate_),
-                                                 std::bind(&Odometry2::homePositionPublisher, this), callback_group_);
+  odometry_timer_ = this->create_wall_timer(std::chrono::duration<double>(1.0 / odometry_loop_rate), 
+                                            std::bind(&Odometry2::odometryRoutine, this), new_cbk_grp());
+  home_position_timer_ = this->create_wall_timer(std::chrono::duration<double>(1.0 / home_position_publish_rate),
+                                                 std::bind(&Odometry2::homePositionPublisher, this), new_cbk_grp());
 
   tf_broadcaster_        = nullptr;
   static_tf_broadcaster_ = nullptr;
@@ -231,30 +234,14 @@ void Odometry2::pixhawkOdomCallback(const px4_msgs::msg::VehicleOdometry::Unique
 
 /* homePositionCallback //{ */
 void Odometry2::homePositionCallback(const px4_msgs::msg::HomePosition::UniquePtr msg) {
-  if (!is_initialized_.load()) {
+  if (!is_initialized_) {
     return;
   }
 
   {
     std::scoped_lock lock(px4_home_position_mutex_);
 
-    px4_home_position_.timestamp =
-        msg->timestamp;  // TODO:: Timestamp will be still the same but is it important? At least we know the last published message time
-    px4_home_position_.lat = msg->lat;
-    px4_home_position_.lon = msg->lon;
-    px4_home_position_.alt = msg->alt;
-
-    px4_home_position_.x = msg->x;
-    px4_home_position_.y = msg->y;
-    px4_home_position_.z = msg->z;
-
-    px4_home_position_.yaw = msg->yaw;
-
-    px4_home_position_.valid_alt  = msg->valid_alt;
-    px4_home_position_.valid_hpos = msg->valid_hpos;
-    px4_home_position_.valid_lpos = msg->valid_lpos;
-
-    px4_home_position_.manual_home = msg->manual_home;
+    px4_home_position_ = *msg;
   }
 
   double out_x, out_y;
@@ -356,7 +343,7 @@ void Odometry2::odometryRoutine(void) {
 
   } else {
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "[%s]: Getting PX4 odometry: %s, Getting control_interface diagnostics: %s",
-                         this->get_name(), getting_pixhawk_odom_.load() ? "TRUE" : "FALSE", getting_control_interface_diagnostics_ ? "TRUE" : "FALSE");
+                         this->get_name(), getting_pixhawk_odom_ ? "TRUE" : "FALSE", getting_control_interface_diagnostics_ ? "TRUE" : "FALSE");
   }
 }
 //}
@@ -405,7 +392,7 @@ void Odometry2::publishStaticTF() {
   tf.transform.rotation.w = q.getW();
   v_transforms.push_back(tf);
 
-  tf_world_to_ned_origin_frame_ = tf;
+  tf_local_origin_to_ned_origin_frame_ = tf;
 
   tf.header.frame_id         = utm_origin_frame_;
   tf.child_frame_id          = local_origin_frame_;
@@ -468,7 +455,7 @@ void Odometry2::publishLocalOdomAndTF() {
   pose_ned.pose.position.z = px4_position_[2];
   tf2::convert(q_new, pose_ned.pose.orientation);
 
-  tf2::doTransform(pose_ned, pose_enu, tf_world_to_ned_origin_frame_);
+  tf2::doTransform(pose_ned, pose_enu, tf_local_origin_to_ned_origin_frame_);
 
   nav_msgs::msg::Odometry msg;
 
@@ -483,7 +470,7 @@ void Odometry2::publishLocalOdomAndTF() {
 
 /*setInitialPx4Params//{*/
 bool Odometry2::setInitialPx4Params() {
-  for (const px4_int item : px4_params_int_) {
+  for (const px4_int& item : px4_params_int_) {
     auto request        = std::make_shared<fog_msgs::srv::SetPx4ParamInt::Request>();
     request->param_name = std::get<0>(item);
     request->value      = std::get<1>(item);
@@ -491,7 +478,7 @@ bool Odometry2::setInitialPx4Params() {
     auto call_result = set_px4_param_int_->async_send_request(request, std::bind(&Odometry2::setPx4IntParamCallback, this, std::placeholders::_1));
   }
 
-  for (const px4_float item : px4_params_float_) {
+  for (const px4_float& item : px4_params_float_) {
     auto request        = std::make_shared<fog_msgs::srv::SetPx4ParamFloat::Request>();
     request->param_name = std::get<0>(item);
     request->value      = std::get<1>(item);
@@ -503,6 +490,16 @@ bool Odometry2::setInitialPx4Params() {
 }
 
 /*//}*/
+
+/* new_cbk_grp() method //{ */
+// just a util function that returns a new mutually exclusive callback group to shorten the call
+rclcpp::CallbackGroup::SharedPtr Odometry2::new_cbk_grp()
+{
+  const rclcpp::CallbackGroup::SharedPtr new_group = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  callback_groups_.push_back(new_group);
+  return new_group;
+}
+//}
 
 }  // namespace odometry2
 
