@@ -3,7 +3,7 @@
 <package format="3">
 
   <name>odometry2</name>
-  <version>0.0.1</version>
+  <version>0.1.0</version>
   <description>Odometry for ROS 2</description>
   <maintainer email="bednar@fly4future.com">Jan Bednar</maintainer>
   <license>BSD 3-Clause</license>
@@ -19,6 +19,7 @@
   <depend>std_msgs</depend>
   <depend>px4_msgs</depend>
   <depend>fog_msgs</depend>
+  <depend>fog_lib</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
